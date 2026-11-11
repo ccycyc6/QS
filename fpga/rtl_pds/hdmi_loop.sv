@@ -30,6 +30,7 @@ module hdmi_loop #(
     inout             hd_sda        ,
     output            led_int       ,
     output            ddr_init_done ,
+    output wire       uart_ctrl_tx  , // track A telemetry (see WITH_CTRL)
 
     // DDR3
     input             clk_p         ,
@@ -257,6 +258,45 @@ module hdmi_loop #(
     assign led_int    = char_seen_latch | rv_led;
 `else
     assign led_int    = char_seen_latch;
+`endif
+
+`ifdef WITH_CTRL
+    // ---- track A: controller telemetry over UART (no sensor attached yet) ----
+    wire       ctrl_start;
+    wire [7:0] ctrl_data;
+    wire       ctrl_busy;
+    wire       ctrl_frame_pulse;
+
+    ctrl_frame #(
+        .CLK_HZ   (74_250_000),
+        .PERIOD_MS(10),
+        .DEMO     (1)
+    ) u_ctrl_frame (
+        .clk        (pixclk_video),
+        .rst_n      (rstn_out),
+        .s_ax       (16'sd0),
+        .s_ay       (16'sd0),
+        .s_az       (16'sd0),
+        .s_btn      (16'd0),
+        .uart_start (ctrl_start),
+        .uart_data  (ctrl_data),
+        .uart_busy  (ctrl_busy),
+        .frame_pulse(ctrl_frame_pulse)
+    );
+
+    uart_tx #(
+        .CLK_HZ(74_250_000),
+        .BAUD  (115200)
+    ) u_ctrl_uart (
+        .clk  (pixclk_video),
+        .rst_n(rstn_out),
+        .start(ctrl_start),
+        .data (ctrl_data),
+        .busy (ctrl_busy),
+        .tx   (uart_ctrl_tx)
+    );
+`else
+    assign uart_ctrl_tx = 1'b1;
 `endif
 
     always_ff @(posedge clk_pe or negedge rstn_out) begin

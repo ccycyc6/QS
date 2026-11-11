@@ -92,6 +92,8 @@ add_design {E:/qs/ScreenSense/fpga/ares/rtl/pipeline/soc/amp/pipeline_irom_arbit
 add_design {E:/qs/ScreenSense/fpga/ares/rtl/pipeline/soc/amp/pipeline_amp_top.sv}
 add_design {E:/qs/ScreenSense/fpga/ares/rtl/pipeline/soc/mc/pipeline_coremark_amp_top.sv}
 add_design {E:/qs/ScreenSense/fpga/rtl_rv/rv_top.v}
+add_design {E:/qs/ScreenSense/fpga/rtl_rv/uart_tx.v}
+add_design {E:/qs/ScreenSense/fpga/rtl_rv/ctrl_frame.v}
 add_design {E:/qs/ScreenSense/fpga/rtl_rv/rv_mmio.v}
 add_design {E:/qs/ScreenSense/fpga/rtl_pds/target/frame_argmax.sv}
 add_design {E:/qs/ScreenSense/fpga/prj_pds/ipcore/ms72/ms72.idf}
