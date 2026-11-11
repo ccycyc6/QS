@@ -4,25 +4,31 @@
 // Wraps the ARES 5-stage core (student_top) with:
 //   * a power-on reset stretcher on the shared clock (no new clock domain),
 //   * all unused SoC ports tied off,
+//   * the shared uncached MMIO window (0xA000F0xx) exposed to rv_mmio,
 //   * one observable output so the core cannot be trimmed by synthesis.
 //
-// ARES sources are NOT modified.  The whole subsystem is instantiated from
-// hdmi_loop.sv only when WITH_RV is defined (see rtl_pds/rv_cfg.vh).
-//
-// Clock: the caller passes pixclk_video (74.25 MHz).  The core is designed for
-// 100 MHz, so 74.25 is a safe derating -- and reusing an existing clock avoids
-// adding a PLL output and a new BKCL/BUFG tree.
+// ARES sources are NOT modified.
+// Clock: pixclk_video (74.25 MHz).  The core is designed for 100 MHz, so this is
+// a safe derating and avoids adding a PLL output / clock tree.
 //=============================================================================
 `timescale 1ns / 1ps
 
 module rv_top (
-    input  wire clk,        // pixclk_video, 74.25 MHz
-    input  wire rst_n,      // asynchronous reset, active low
-    output wire led,        // observable heartbeat (goes to led_int)
-    output wire uart_tx     // SoC UART TX (idle high)
+    input  wire        clk,        // pixclk_video, 74.25 MHz
+    input  wire        rst_n,      // asynchronous reset, active low
+    output wire        led,        // observable heartbeat (goes to led_int)
+    output wire        uart_tx,    // unused, idle high
+
+    // shared uncached MMIO window -> rv_mmio
+    output wire        sh_valid,
+    output wire        sh_write,
+    output wire [31:0] sh_addr,
+    output wire [31:0] sh_wdata,
+    output wire [3:0]  sh_wstrb,
+    input  wire [31:0] sh_rdata
 );
 
-    // ---- power-on reset stretcher: 512 clocks (~7 us) ----
+    // ---- power-on reset stretcher: 512 clocks ----
     reg [8:0] rst_cnt;
     reg       core_rst;
 
@@ -38,7 +44,6 @@ module rv_top (
         end
     end
 
-    // ---- SoC outputs ----
     wire [31:0] virtual_led;
     wire [39:0] virtual_seg;
     wire        retire_valid;
@@ -52,10 +57,9 @@ module rv_top (
     wire        uart_tx_start;
 
     student_top #(
-        // Keep the mainline single-hart profile; shrink only the data RAM.
         .EXTERNAL_IROM (0),
         .USE_ICACHE    (1),
-        .DRAM_AW       (12),                  // 4 KiB data RAM (was 256 KiB)
+        .DRAM_AW       (12),                  // 4 KiB data RAM
         .DRAM_INIT_FILE("build/pipeline/dram.hex")
     ) u_soc (
         .w_cpu_clk     (clk),
@@ -84,16 +88,15 @@ module rv_top (
         .irom_rsp_data (32'd0),
         .irom_rsp_ready(),
         .irom_flush    (),
-        .shared_rdata  (32'd0),
-        .shared_req_valid(),
-        .shared_req_write(),
-        .shared_req_addr (),
-        .shared_req_wdata(),
-        .shared_req_wstrb()
+        .shared_rdata  (sh_rdata),
+        .shared_req_valid(sh_valid),
+        .shared_req_write(sh_write),
+        .shared_req_addr (sh_addr),
+        .shared_req_wdata(sh_wdata),
+        .shared_req_wstrb(sh_wstrb)
     );
 
-    // Observable: any of these toggling keeps the core alive through synthesis.
     assign led     = virtual_led[0] ^ retire_valid ^ retire_pc[2] ^ uart_tx_start;
-    assign uart_tx = 1'b1;   // the UART module lives in the caller; left idle
+    assign uart_tx = 1'b1;
 
 endmodule

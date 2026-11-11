@@ -200,12 +200,60 @@ module hdmi_loop #(
     // ---- RISC-V control-plane subsystem (track B option 2) ----
     wire rv_led;
     wire rv_uart_tx;
+
+    // shared uncached MMIO window (0xA000F0xx) between core and rv_mmio
+    wire        rv_sh_valid;
+    wire        rv_sh_write;
+    wire [31:0] rv_sh_addr;
+    wire [31:0] rv_sh_wdata;
+    wire [3:0]  rv_sh_wstrb;
+    wire [31:0] rv_sh_rdata;
+
     rv_top u_rv_top (
-        .clk     (pixclk_video),
-        .rst_n   (rstn_out),
-        .led     (rv_led),
-        .uart_tx (rv_uart_tx)
+        .clk      (pixclk_video),
+        .rst_n    (rstn_out),
+        .led      (rv_led),
+        .uart_tx  (rv_uart_tx),
+        .sh_valid (rv_sh_valid),
+        .sh_write (rv_sh_write),
+        .sh_addr  (rv_sh_addr),
+        .sh_wdata (rv_sh_wdata),
+        .sh_wstrb (rv_sh_wstrb),
+        .sh_rdata (rv_sh_rdata)
     );
+
+    // frame-level argmax on the detection stream (clk_pe domain)
+    wire        tgt_valid;
+    wire [31:0] tgt_packet;
+    wire [15:0] tgt_count;
+    frame_argmax u_tgt_argmax (
+        .clk        (clk_pe),
+        .rst_n      (rstn_out),
+        .in_valid   (post_packet_valid),
+        .in_packet  (post_packet_data),
+        .frame_done (post_frame_done),
+        .out_valid  (tgt_valid),
+        .out_packet (tgt_packet),
+        .det_count  (tgt_count)
+    );
+
+    rv_mmio u_rv_mmio (
+        .clk_cpu   (pixclk_video),
+        .rst_n_cpu (rstn_out),
+        .sh_valid  (rv_sh_valid),
+        .sh_write  (rv_sh_write),
+        .sh_addr   (rv_sh_addr),
+        .sh_wdata  (rv_sh_wdata),
+        .sh_wstrb  (rv_sh_wstrb),
+        .sh_rdata  (rv_sh_rdata),
+        .clk_vis   (clk_pe),
+        .rst_n_vis (rstn_out),
+        .tgt_valid (tgt_valid),
+        .tgt_packet(tgt_packet),
+        .det_count (tgt_count),
+        .gate_o    ()
+    );
+
     assign led_int    = char_seen_latch | rv_led;
 `else
     assign led_int    = char_seen_latch;

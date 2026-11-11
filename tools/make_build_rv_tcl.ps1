@@ -23,6 +23,8 @@ foreach ($line in (Get-Content $fv)) {
     [void]$files.Add((Join-Path $aresRoot $l))
 }
 [void]$files.Add((Join-Path $fpga 'rtl_rv\rv_top.v'))
+[void]$files.Add((Join-Path $fpga 'rtl_rv\rv_mmio.v'))
+[void]$files.Add((Join-Path $fpga 'rtl_pds\target\frame_argmax.sv'))
 
 $root = $fpga.Replace('\', '/')
 $t = New-Object System.Collections.ArrayList
