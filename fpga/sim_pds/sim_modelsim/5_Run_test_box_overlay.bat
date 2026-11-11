@@ -1,1 +1,0 @@
-vsim -do ./test_box_overlay.tcl

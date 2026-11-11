@@ -1,1 +1,0 @@
-vsim -do ./test_post_cv3_conv2d.tcl
