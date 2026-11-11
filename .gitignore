@@ -25,3 +25,7 @@ desktop.ini
 
 # ARES image files generated for the RV build
 fpga/prj_pds/build/
+
+# PDS rewrites these on every run
+fpga/prj_pds/build_rv.pds
+fpga/prj_pds/impl.tcl
