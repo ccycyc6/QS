@@ -120,3 +120,28 @@
 | 6 | 瘦身：砍 CoreMark 加速器 + I-Cache | 无 | 低（可省约 2.8k LUT） |
 
 若第 1 项时序变负，退路是把核降到 37 MHz（pixclk/2）——它只做调度，不需要快。
+
+## 7. 澄清：核不是「5 级」
+
+项目文档（包括 ARES 原 README 和我们的早期文档）一直写「5 级」，但那来自上游 Chisel 分支名
+npc 5-stage-pipeline（commit 1d839c86），不是实际 RTL 结构。
+
+实际结构（依据 Mundus.sv 中 7 组 *_io_in_bits_r_* 寄存器边界）：
+
+| 流水级 | 边界寄存器组 | 备注 |
+|---|---|---|
+| IF  | （无独立输入寄存器） | 取指由 IFU/I-Cache 完成 |
+| ID  | IDU_io_in_bits_r_*（4） | |
+| IS  | ISU_io_in_bits_r_*（26） | 发射 / 寄存器读 |
+| EX1 | EXU_io_in_bits_r_*（29） | ALU / BRU |
+| EX2 | exu_ex2_io_in_bits_r_*（13） | 乘除 / CRC 低 4 bit |
+| EX3 | exu_ex3_io_in_bits_r_*（11） | 乘除多周期 / CRC 高 4 bit |
+| EX4 | exu_ex4_io_in_bits_r_*（9） | 写回数据汇聚 |
+| LSU→WB | WBU_io_in_bits_r_*（27） | LSU 与 WBU 共用这一拍 |
+
+- **寄存器拍数：8**（IF / ID / IS / EX1 / EX2 / EX3 / EX4 / WB）；
+- **功能单元数：9**（IFU/IDU/ISU/EX1/EX2/EX3/EX4/LSU/WBU）；
+- IFU 与 LSU 没有独立的输入寄存器组，所以它们不单独构成一拍。
+
+**结论**：叫「5 级」是命名沿用，不准确；按寄存器边界是 **8 级**，按功能单元是 **9 级**。
+对外表述建议统一为「单发射、8 级流水（9 个功能单元）」。
