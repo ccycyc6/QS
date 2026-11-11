@@ -30,7 +30,9 @@ module hdmi_loop #(
     inout             hd_sda        ,
     output            led_int       ,
     output            ddr_init_done ,
-    output wire       uart_ctrl_tx  , // track A telemetry (see WITH_CTRL)
+`ifdef WITH_CTRL
+    output wire       uart_ctrl_tx  , // track A telemetry (only when WITH_CTRL)
+`endif
 
     // DDR3
     input             clk_p         ,
@@ -295,8 +297,6 @@ module hdmi_loop #(
         .busy (ctrl_busy),
         .tx   (uart_ctrl_tx)
     );
-`else
-    assign uart_ctrl_tx = 1'b1;
 `endif
 
     always_ff @(posedge clk_pe or negedge rstn_out) begin

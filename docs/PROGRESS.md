@@ -43,9 +43,9 @@
 | GPLL | 4 / 10 | 40% |
 
 - 时序：**TNS = 0，WNS = +116 ps**（裕量很薄）
-- 耗时：compile 48 s + synthesize 5 m 24 s + PnR 约 10 m + 位流 1 m 2 s = **17 m 23 s**，峰值内存 4.95 GB
-- 位流：bitstreams/cnn_2025.2_02EFD676.sbit，9,188,552 B，
-  sha256 02EFD6766BB69830DF272606FB64583CE6023FF25B5837059C9D55C98A154FC6
+- 耗时：compile 48 s + synthesize 5 m 24 s + PnR 约 10 m + 位流 1 m 2 s = **17 m 23 s**；重出一次含条件端口的版本为 **20 m 48 s**，峰值内存 5.0 GB
+- 位流：bitstreams/vision_2026-11-11_85631AFB.sbit，9,188,552 B，
+  sha256 85631AFB0E521FDE357708D4D40C8DCE7C18CC2463C6707F0E3F643076B0C505（2026-11-11 重建，含条件端口改动）
 
 ### 2.3 ARES 核单独实测（用于判断能否共位）
 
@@ -145,3 +145,53 @@ npc 5-stage-pipeline（commit 1d839c86），不是实际 RTL 结构。
 
 **结论**：叫「5 级」是命名沿用，不准确；按寄存器边界是 **8 级**，按功能单元是 **9 级**。
 对外表述建议统一为「单发射、8 级流水（9 个功能单元）」。
+
+---
+
+## 8. 上板流程（视觉线）
+
+### 8.1 烧写
+
+```
+# 方式一：脚本（JTAG）
+powershell -File tools/program.ps1 -Bitstream bitstreams/<xxx>.sbit
+
+# 方式二：PDS GUI -> Tools -> Download -> 选 .sbit -> Download to SRAM
+```
+
+下载到 SRAM 即可（掉电丢失），不需要烧 Flash。
+
+### 8.2 接线
+
+| 端口 | 连接 |
+|---|---|
+| HDMI IN | 信号源，**必须 1280×720@60**（1650×750 时序，74.25 MHz） |
+| HDMI OUT | 显示器 |
+| JTAG | Pango 下载器 |
+| 电源 | 12V |
+
+### 8.3 预期现象（按顺序）
+
+| # | 现象 | 含义 |
+|---|---|---|
+| 1 | 复位后 LED1（**C18**，`ddr_init_done`）亮 | DDR3 校准通过 |
+| 2 | 显示器出现 720p 画面（原图环出） | HDMI 收发链路正常 |
+| 3 | 画面中出现检测框 | YOLO 检出候选 |
+| 4 | LED0（**A20**，`led_int`）亮 | LPRNet 认出了字符（锁存型，识别到一次后常亮，复位清零） |
+
+### 8.4 排错顺序（从后往前查）
+
+| 现象 | 先查 |
+|---|---|
+| 全黑 / 无信号 | MS7210 未配置：`hd_scl`=K22 / `hd_sda`=K23 是否接反；`rstn_out`(G25) 是否 1ms 后释放；`pixclk_out`(T24) 是否 74.25 MHz；输入是否真为 720p60 |
+| 有画面无框 | 输入分辨率；`CONF_THRESH`（`hdmi_loop.sv` 里 8'h40，可试 0x20/0x60） |
+| 有框无字符 | 看 LED0：不亮说明 LPRNet 链路没出字符，查 crop 触发与 `lprnet_out_valid` |
+| 框与画面不同帧 | `DDR_READ_START_LINE`（默认 6）；LED1 是否亮 |
+| 画面撕裂/闪烁 | box/crop 时序问题，见 `fpga/doc/改动.md`；确认 `MAX_BOX_NUM`=6 与 crop buffer 深度匹配 |
+
+### 8.5 测试素材
+
+`fpga/data_pics/` 有 23 张车牌图。让 PC 全屏显示其中一张，
+并把显示模式设成 **1280×720@60**（Windows：显示设置 → 分辨率 → 1280×720，刷新率 60 Hz）。
+
+画面里车牌太小或不存在时不会触发检测——先放大图片，让车牌占据画面 1/5 以上。
