@@ -29,3 +29,5 @@ fpga/prj_pds/build/
 # PDS rewrites these on every run
 fpga/prj_pds/build_rv.pds
 fpga/prj_pds/impl.tcl
+# firmware build output
+fpga/rtl_rv/fw/out/
