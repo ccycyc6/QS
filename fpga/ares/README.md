@@ -12,7 +12,7 @@
 | `rtl/video/` | 视频相关（本工程不用） |
 | `pango/` | 板级约束 pipeline_board.fdc、流程 tcl |
 | `abstract-machine/` | 裸机运行时与链接脚本（编固件用） |
-| `docs/` | 原仓库微架构/加速器文档 |
+| `docs/` | 微架构与流水线文档（CoreMark / 多核 / AMP 相关已在整理时删除，见文末） |
 | `Makefile` / `common.mk` | 原仓库构建入口（参考用） |
 
 ## 档 2 的裁剪清单
@@ -48,3 +48,7 @@
 - 原工程用 `GTP_GPLL` 直连产生 100/50 MHz；视觉工程已有自己的 PLL 与时钟树（BKCL 已用 5/10）。
 - 编译工具链：`E:/qs/toolchain/riscv`（riscv64-unknown-elf-gcc）。
 - 本目录代码尚未接入 `rtl_pds/`，独立存在，互不影响。
+- 整理时删除了 `docs/` 下 16 篇与 CoreMark 加速器、多核 AMP 相关的文档（档 2 不使用它们）；
+  需要查阅可从 git 历史恢复：`git show 999b474:fpga/ares/docs/<文件名>`。
+- 保留的文档：`pipeline_single_issue_plan.md`（核设计）、`pipeline_reset_analysis.md`（复位）、
+  `microarch/pipeline_icache.md`、`microarch/pipeline_dcache.md`（缓存，裁剪前参考）。
