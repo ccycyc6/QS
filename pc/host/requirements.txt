@@ -1,0 +1,5 @@
+mediapipe==0.10.9
+vgamepad
+opencv-python
+numpy
+pytest

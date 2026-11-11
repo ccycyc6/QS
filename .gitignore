@@ -1,0 +1,24 @@
+# ---- build / sim artifacts ----
+obj_dir/
+build/
+prj_tasks/
+*.log
+
+# ---- PDS outputs ----
+fpga/prj_pds/compile/
+fpga/prj_pds/synthesize/
+fpga/prj_pds/device_map/
+fpga/prj_pds/place_route/
+fpga/prj_pds/report_timing/
+fpga/prj_pds/report_power/
+fpga/prj_pds/generate_bitstream/
+
+# ---- python ----
+__pycache__/
+*.pyc
+
+# ---- editors / os ----
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
