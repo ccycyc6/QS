@@ -1,11 +1,30 @@
 # ScreenSense
 
-两条互不依赖的线：
+**两条互不依赖的线，跑在同一颗 FPGA 上。**
 
-- **线 A（控制）** 加速度计 → FPGA 采集 → PC → 游戏。延迟目标 7–10 ms。
-- **线 B（展示）** 摄像头 720p60 → FPGA 加速器 → OSD 合成 → HDMI 实时 UI。
+- **线 A（控制）** 加速度计 → FPGA 采集 → 串口 → PC → 虚拟手柄 → 游戏。
+- **线 B（展示）** 摄像头/PC 画面 720p60 → FPGA 加速器 → OSD → HDMI 实时 UI。
 
-线 B 的加速器底座已复现（PDS 2025.2，位流已生成）；RISC-V 核与上位机已备料，尚未接入。
+目标形态：一块盘古 200Pro+（PG2L200H），同时完成**体感控制**和**实时视觉展示**，
+并用自研 5 级 RISC-V 核做帧级调度。
+
+---
+
+## 架构
+
+```
+线 B（视觉）
+  HDMI 720p60 ─► 11 层卷积（车牌 YOLOv3）─► post_cv3 ─► frame_argmax
+                                                  │            │
+                                                  ▼            ▼
+                                            box_overlay    rv_mmio ──► RV32 调度器
+                                                  │            │
+                                                  ▼            ▼
+                                             HDMI OUT      UART（待仲裁）
+
+线 A（控制）
+  加速度计（待接）─► ctrl_frame ─► uart_tx ─► 串口 ─► PC ─► vgamepad ─► 游戏
+```
 
 ---
 
@@ -13,21 +32,22 @@
 
     ScreenSense/
     ├── fpga/
-    │   ├── rtl_pds/                  视觉 RTL（顶层 + 11 层网络 + overlay）
-    │   ├── prj_pds/                  PDS 工程（相对路径） + 4 个 IP
+    │   ├── rtl_pds/                  视觉 RTL（11 层网络 + overlay + DDR + HDMI）
+    │   ├── prj_pds/                  PDS 工程 + 4 个 IP（ms72/PLL/ip_fifo/ddr3_test）
     │   ├── conv_data_yolov3_new_pds/ YOLO 权重 .mat（133 MB）
     │   ├── conv_data_hex_pds/        仿真输入 hex（43 MB）
     │   ├── python_script/            权重生成器
     │   ├── sim_pds/                  16 个 testbench
-    │   ├── ares/                     ← RISC-V 核（档 2 备料，未接入）
+    │   ├── ares/                     ARES RV32IM 核（未改源码）
+    │   ├── rtl_rv/                   新增：rv_top / rv_mmio / frame_argmax / uart_tx / ctrl_frame / 固件
+    │   ├── tools/                    引脚脚本 + 仿真脚本
     │   └── doc/                      原复现指南
     ├── pc/
-    │   ├── host/                     ← 上位机（继承 Immersive_Controller）
+    │   ├── host/                     上位机（UDP + vgamepad）
     │   └── reference/                原项目 PRD / 技术设计
-    ├── bitstreams/                   已生成位流（含 sha256）
-    ├── docs/                         PLAN / STATUS / DECISIONS
-    ├── tools/                        构建与仿真脚本
-    └── imu/                          线 A（待建）
+    ├── bitstreams/                   已生成位流
+    ├── tools/                        构建脚本
+    └── docs/PROGRESS.md              进度记录
 
 ---
 
@@ -36,27 +56,42 @@
 | 项 | 值 |
 |---|---|
 | 器件 | PG2L200H-6IFBB676（盘古 200Pro+） |
-| 输入 | **1280×720@60 硬约束**，H_TOTAL 1650 / V_TOTAL 750 |
-| 网络 | 11 层 conv/ReLU/maxpool，输出 80×45 × 16 通道 |
+| 视觉输入 | **1280×720@60 硬约束**（H_TOTAL 1650 / V_TOTAL 750） |
+| 网络 | 11 层 conv/ReLU/maxpool + LPRNet，输出 80×45 |
 | 推理延迟 | 1.14 ms @148.5 MHz |
-| PnR 资源 | CLMA 62% / LUT 53% / DRM36K 47% / APM 36% |
-| 时序 | WNS **+116 ps**、TNS 0（裕量很薄） |
-| 构建 | PDS **2025.2-SP3**，全流程 17 分 23 秒 |
-| 现所有权重 | **车牌检测器**，改用途必须重训 |
-| 后处理 | 逐格取通道最大；**无 NMS、无 bbox 回归、无跟踪** |
+| 工具链 | PDS **2025.2-SP3**，全流程 17 分 23 秒 |
+| 当前资源 | LUT **54.35%**、DRM 58%、APM 38%（视觉 + RV 核 + 串口） |
+| 时序 | 基线 WNS +116 ps；**加核后尚未重测** |
+| 位流 | bitstreams/cnn_2025.2_02EFD676.sbit（仅视觉基线） |
 
 ---
 
-## 状态
+## 构建
 
-| 部分 | 状态 |
-|---|---|
-| 视觉底座复现 | ✅ 位流已生成，时序收敛 |
-| 全局 argmax（B5） | ✅ Verilator 仿真通过 |
-| RISC-V 核备料 | ✅ 已放入 `fpga/ares/`，未接入 |
-| 上位机备料 | ✅ 已放入 `pc/host/`，未适配 |
-| OSD 仪表盘（B6） | ⬜ |
-| 模型重训（B2–B4） | ⬜ |
-| 线 A（IMU） | ⬜ |
+```
+# 基线（仅视觉）
+powershell -File tools/make_build_tcl.ps1
+cd fpga/prj_pds
+D:/Pango/PDS_2025.2-SP3-EN-ads/bin/pds_shell.exe -file ../../tools/build_full.tcl
 
-详见 [docs/PLAN.md](docs/PLAN.md)、[docs/STATUS.md](docs/STATUS.md)、[docs/DECISIONS.md](docs/DECISIONS.md)。
+# 全量（视觉 + RISC-V 核 + 控制器串口）
+powershell -File tools/make_build_rv_tcl.ps1
+D:/Pango/PDS_2025.2-SP3-EN-ads/bin/pds_shell.exe -file ../../tools/build_rv.tcl
+
+# 固件（39 条指令，156 字节）
+powershell -File fpga/rtl_rv/fw/build_fw.ps1
+```
+
+开关在 `fpga/rtl_rv/cfg_on|cfg_off/rv_cfg.vh`：定义 `WITH_RV` 与 `WITH_CTRL`。
+
+---
+
+## 边界（明确不做）
+
+- 多目标 NMS、精确 bbox 回归、目标跟踪 —— 观感提升≈0，复杂度翻倍；
+- 中文 OSD（3500 字形，110 KB BRAM）；
+- 辅助代打 —— 视觉只提示/门控，不进控制环。
+
+---
+
+详细进度、实测数据、踩过的坑、决策记录见 [docs/PROGRESS.md](docs/PROGRESS.md)。
