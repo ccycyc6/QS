@@ -26,7 +26,7 @@ $t = New-Object System.Collections.ArrayList
 [void]$t.Add('add_constraint {' + $root + '/prj_pds/hdmi_loop.fdc}')
 foreach ($f in ($files | Select-Object -Unique)) { [void]$t.Add('add_design {' + $root + '/prj_pds/' + $f + '}') }
 foreach ($f in ($ips   | Select-Object -Unique)) { [void]$t.Add('add_design {' + $root + '/prj_pds/' + $f + '}') }
-[void]$t.Add('compile -top_module {hdmi_loop} -system_verilog -include_path [list {' + $root + '/rtl_pds} {' + $root + '/rtl_pds/data_process}]')
+[void]$t.Add('compile -top_module {hdmi_loop} -system_verilog -include_path [list {' + $root + '/rtl_rv/cfg_off} {' + $root + '/rtl_pds} {' + $root + '/rtl_pds/data_process}]')
 [void]$t.Add('synthesize -ads')
 [void]$t.Add('dev_map')
 [void]$t.Add('pnr')

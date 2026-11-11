@@ -42,7 +42,7 @@ add_design {E:/qs/ScreenSense/fpga/prj_pds/ipcore/ms72/ms72.idf}
 add_design {E:/qs/ScreenSense/fpga/prj_pds/ipcore/PLL/PLL.idf}
 add_design {E:/qs/ScreenSense/fpga/prj_pds/ipcore/ip_fifo/ip_fifo.idf}
 add_design {E:/qs/ScreenSense/fpga/prj_pds/ipcore/ddr3_test/ddr3_test.idf}
-compile -top_module {hdmi_loop} -system_verilog -include_path [list {E:/qs/ScreenSense/fpga/rtl_pds} {E:/qs/ScreenSense/fpga/rtl_pds/data_process}]
+compile -top_module {hdmi_loop} -system_verilog -include_path [list {E:/qs/ScreenSense/fpga/rtl_rv/cfg_off} {E:/qs/ScreenSense/fpga/rtl_pds} {E:/qs/ScreenSense/fpga/rtl_pds/data_process}]
 synthesize -ads
 dev_map
 pnr

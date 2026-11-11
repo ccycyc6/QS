@@ -9,6 +9,10 @@
 
 `define UD #1
 
+// WITH_RV is supplied by rv_cfg.vh: rtl_pds/ ships the neutral copy,
+// rtl_rv/cfg_on/ ships the one that enables the RISC-V subsystem.
+`include "rv_cfg.vh"
+
 module hdmi_loop #(
     parameter   X_WIDTH = 4'd12,
     parameter   Y_WIDTH = 4'd12,
@@ -192,7 +196,20 @@ module hdmi_loop #(
     // 1. 系统基础配置与时钟/复位管理
     // =========================================================
     assign pixclk_video = pixclk_in;
+`ifdef WITH_RV
+    // ---- RISC-V control-plane subsystem (track B option 2) ----
+    wire rv_led;
+    wire rv_uart_tx;
+    rv_top u_rv_top (
+        .clk     (pixclk_video),
+        .rst_n   (rstn_out),
+        .led     (rv_led),
+        .uart_tx (rv_uart_tx)
+    );
+    assign led_int    = char_seen_latch | rv_led;
+`else
     assign led_int    = char_seen_latch;
+`endif
 
     always_ff @(posedge clk_pe or negedge rstn_out) begin
         if (!rstn_out) begin

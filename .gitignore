@@ -22,3 +22,6 @@ __pycache__/
 .idea/
 Thumbs.db
 desktop.ini
+
+# ARES image files generated for the RV build
+fpga/prj_pds/build/
