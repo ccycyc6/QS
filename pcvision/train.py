@@ -64,7 +64,8 @@ def main():
             for path, cls, x, y in rows[i:i + args.batch]:
                 bgr = cv2.imread(path)
                 rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-                imgs.append(torch.from_numpy(rgb).permute(2, 0, 1).float() / 255.0 * 2 - 1)
+                # (x-128)/128 matches the RTL and ml/export_mat.py offset
+                imgs.append(torch.from_numpy(rgb).permute(2, 0, 1).float() / 128.0 - 1.0)
                 tgts.append(make_target(cls, x, y, args.classes, device))
             xb = torch.stack(imgs).to(device)
             tb = torch.cat(tgts)

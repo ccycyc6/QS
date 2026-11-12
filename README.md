@@ -39,7 +39,9 @@
     │   ├── python_script/          权重打包生成器
     │   └── ares/                   RISC-V 核（另一条线，本线未使用）
     ├── ml/                         训练模板 / .mat 导出 / 硬件打包
+    ├── pcvision/gesture/           手势全链路：采集→训练→量化→位精确→打包
     ├── docs/                       MODEL.md（模型合同）/ PROGRESS.md（进度）
+    │                               GESTURE.md（手势训练与上板）
     ├── bitstreams/cam_yolo.sbit    当前位流
     └── tools/                      烧写脚本
 
@@ -75,6 +77,21 @@ cd /mnt/e/qs/ScreenSense/pcvision
 bash setup.sh          # 建 venv、装依赖（--cuda 可装 GPU 版 torch）
 bash doctor.sh         # 逐项自检：包、CUDA、摄像头、权限、图形会话
 ```
+
+### 手势训练（本机 PC 摄像头）
+
+训练环境隔离在仓库外（默认 `<repo>/../gesture-env`），可整体删除腾空间：
+
+```bash
+bash pcvision/gesture/setup_env.sh              # 一次性：venv + torch/cu124
+bash pcvision/gesture/doctor.sh                 # 摄像头/CUDA 自检
+bash pcvision/gesture/record.sh                 # 引导式采集（每类按一次空格）
+bash pcvision/gesture/run_pipeline.sh all       # 训练→量化→位精确评估→打包
+bash pcvision/gesture/manifest.sh               # 安装清单（体积）
+bash pcvision/gesture/cleanup.sh                # 预览清理；--yes 执行
+```
+
+训练满意后再按 [docs/GESTURE.md](docs/GESTURE.md) 第 7 节在 Windows 上综合、烧写。
 
 ---
 

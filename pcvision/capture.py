@@ -79,6 +79,7 @@ def main():
         if not ok:
             break
         view = letterbox(frame)
+        clean = view.copy()          # saved sample: no grid / crosshair
 
         for gx in range(0, TARGET_W, 160):
             cv2.line(view, (gx, 0), (gx, TARGET_H), (40, 40, 40), 1)
@@ -103,7 +104,7 @@ def main():
             state['cx'], state['cy'] = None, None
         elif key == 32 and state['cx'] is not None:
             name = f'sample_{int(time.time() * 1000)}.png'
-            cv2.imwrite(os.path.join(args.out, name), view)
+            cv2.imwrite(os.path.join(args.out, name), clean)
             writer.writerow([name, state['cls'], state['cx'], state['cy']])
             csv_f.flush()
             saved += 1
