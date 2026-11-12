@@ -9,6 +9,7 @@ geometry.  Data and checkpoints live in the isolated workspace
 from __future__ import annotations
 
 import csv
+import itertools
 import json
 import os
 import random
@@ -247,30 +248,74 @@ def append_label(label: Label, root: str | os.PathLike | None = None) -> None:
         f.flush()
 
 
-def split_labels(labels: list[Label], val_frac: float = 0.2, seed: int = 0) -> tuple[list[Label], list[Label]]:
-    """Split by capture session so near-duplicate frames cannot leak into val."""
-    rng = random.Random(seed)
+def _split_by_session(labels: list[Label], val_frac: float) -> tuple[list[Label], list[Label]]:
+    """Choose whole sessions for val, preferring class coverage then size."""
     sessions = sorted({l.session or "legacy" for l in labels})
-    if len(sessions) >= 3:
-        rng.shuffle(sessions)
-        n_val = max(1, int(round(len(sessions) * val_frac)))
-        val_sessions = set(sessions[:n_val])
-        train = [l for l in labels if (l.session or "legacy") not in val_sessions]
-        val = [l for l in labels if (l.session or "legacy") in val_sessions]
-    else:
-        # single-session fallback: stratified sample split (leakage possible)
-        train, val = [], []
-        by_cls: dict[int, list[Label]] = {}
-        for l in labels:
-            by_cls.setdefault(l.cls, []).append(l)
-        for cls, items in by_cls.items():
-            rng.shuffle(items)
-            n = max(1, int(round(len(items) * val_frac))) if len(items) > 1 else 0
-            val.extend(items[:n])
-            train.extend(items[n:])
-        rng.shuffle(val)
-        rng.shuffle(train)
+    if len(sessions) < 2:
+        return [], []
+    n_val = max(1, int(round(len(sessions) * val_frac)))
+    n_val = min(n_val, len(sessions) - 1)
+    total = max(1, len(labels))
+    best = None
+    for combo in itertools.combinations(sessions, n_val):
+        chosen = set(combo)
+        val = [l for l in labels if (l.session or "legacy") in chosen]
+        train = [l for l in labels if (l.session or "legacy") not in chosen]
+        cover = len({l.cls for l in val})
+        score = (cover, -abs(len(val) / total - val_frac), len(val))
+        if best is None or score > best[0]:
+            best = (score, train, val)
+    return best[1], best[2]
+
+
+def _split_stratified(labels: list[Label], val_frac: float, seed: int) -> tuple[list[Label], list[Label]]:
+    """Per-class random split.  Use when session split cannot cover all classes."""
+    rng = random.Random(seed)
+    by_cls: dict[int, list[Label]] = {}
+    for l in labels:
+        by_cls.setdefault(l.cls, []).append(l)
+    train, val = [], []
+    for cls in sorted(by_cls):
+        items = by_cls[cls]
+        rng.shuffle(items)
+        if len(items) > 1:
+            n = max(1, int(round(len(items) * val_frac)))
+            n = min(n, len(items) - 1)
+        else:
+            n = 0
+        val.extend(items[:n])
+        train.extend(items[n:])
+    rng.shuffle(val)
+    rng.shuffle(train)
     return train, val
+
+
+def split_labels(labels: list[Label], val_frac: float = 0.2, seed: int = 0,
+                 mode: str = "auto") -> tuple[list[Label], list[Label]]:
+    """Split train/val.
+
+    mode="session"    whole sessions only (no near-duplicate leakage, but a
+                      partial session can leave val without some classes);
+    mode="stratified" per-class random split (always covers classes, small
+                      leakage risk between adjacent recorded frames);
+    mode="auto"       prefer a session split that covers all classes and keeps
+                      at least half the data for training, else stratified.
+    """
+    if mode not in ("auto", "session", "stratified"):
+        raise ValueError("split mode must be auto/session/stratified")
+    if not labels:
+        return [], []
+    if mode == "session":
+        return _split_by_session(labels, val_frac)
+    if mode == "stratified":
+        return _split_stratified(labels, val_frac, seed)
+    train, val = _split_by_session(labels, val_frac)
+    need = {l.cls for l in labels}
+    got = {l.cls for l in val}
+    if (val and need <= got and len(train) >= 0.5 * len(labels)
+            and len(val) <= 0.5 * len(labels)):
+        return train, val
+    return _split_stratified(labels, val_frac, seed)
 
 
 def class_counts(labels: list[Label]) -> dict[int, int]:

@@ -100,7 +100,7 @@ class Workbench:
         self.guided = None
         self.monitor = None                # (net, device)
         self.actions = None
-        self.threshold = 0.0
+        self.threshold = None
         self.events = deque(maxlen=40)
         self.last_det = None
         self.job = None
@@ -271,7 +271,7 @@ class Workbench:
             cls = int(ch[0, best].item() % len(self.classes))
             conf = float(val[0, best].item())
             gx, gy = best % GRID_W, best // GRID_W
-        show = cls > 0 and conf >= threshold
+        show = cls > 0 and (threshold is None or conf >= threshold)
         if acts is not None:
             for ev in acts.update(cls, gx, gy, int(round(conf)), now):
                 with self.lock:
@@ -367,6 +367,7 @@ class Workbench:
                 "monitor": self.mode == "monitor", "threshold": self.threshold,
                 "metrics": self.metrics, "train": self.train_meta, "job": job,
                 "checkpoint": (runs_dir() / "gesture.pt").exists(),
+                "last_det": self.last_det,
                 "events": list(self.events)[-8:],
             }
 
@@ -442,11 +443,19 @@ class Workbench:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         net.to(device).eval()
         if threshold is None or threshold == "":
-            threshold = self.threshold
+            threshold = None
+            if self.metrics:
+                f = self.metrics.get("float") or {}
+                if f.get("clean_separation") and f.get("threshold") is not None:
+                    threshold = float(f["threshold"])
+            if threshold is None:
+                self.log("no clean eval threshold; monitor shows every gesture class")
+            else:
+                self.log("using eval threshold " + str(threshold))
         with self.lock:
             self.monitor = (net, device)
             self.actions = GestureActions(self.classes, ActionConfig())
-            self.threshold = float(threshold or 0.0)
+            self.threshold = None if threshold is None else float(threshold)
             self.events.clear()
             self.mode = "monitor"
             self.guided = None
@@ -736,8 +745,9 @@ INDEX_HTML = """<!doctype html>
         <label>阈值<input id="thresh" type="number" step="0.1" placeholder="自动"></label>
         <button id="monitorBtn">开始监测</button>
       </div>
+      <div id="det" class="status"></div>
       <div id="events" class="events"></div>
-      <div class="hint">监测使用 runs/gesture.pt；阈值可留空自动取评估值。</div>
+      <div class="hint">监测使用 runs/gesture.pt；阈值留空表示不启用阈值（显示所有手势类）。</div>
     </div>
 
     <div class="card">
@@ -786,7 +796,9 @@ function renderMetrics(m) {
     card.className = 'metric';
     card.innerHTML = '<div class="k">' + pair[1] + '</div>' +
       '<div class="v">' + (d.accuracy * 100).toFixed(1) + '%</div>' +
-      '<div class="s">阈值 ' + d.threshold + (d.clean_separation ? ' · 分界清晰' : '') + '</div>';
+      '<div class="s">' + (d.threshold === null || d.threshold === undefined
+          ? '无阈值' : ('阈值 ' + d.threshold)) +
+        (d.clean_separation ? ' · 分界清晰' : '') + '</div>';
     el.appendChild(card);
   });
 }
@@ -857,6 +869,12 @@ async function refresh() {
       : '';
     renderMetrics(s.metrics);
     renderEvents(s.events);
+    $('det').textContent = s.last_det
+      ? ('最近: class ' + s.last_det.cls + ' ' + (s.classes[s.last_det.cls] || '') +
+         ' · conf ' + Number(s.last_det.conf).toFixed(2) +
+         ' · cell (' + s.last_det.gx + ',' + s.last_det.gy + ')' +
+         (s.last_det.show ? '' : ' · 低于阈值'))
+      : '';
 
     monitoring = !!s.monitor;
     $('monitorBtn').textContent = monitoring ? '停止监测' : '开始监测';
@@ -867,10 +885,14 @@ async function refresh() {
     $('evalBtn').disabled = busy;
     $('applyNames').disabled = busy;
     $('resetBtn').disabled = busy;
-    if (s.metrics && s.metrics.float && s.metrics.float.threshold !== undefined && !$('thresh').value) {
+    if (s.metrics && s.metrics.float && s.metrics.float.threshold !== null &&
+        s.metrics.float.threshold !== undefined && s.metrics.float.clean_separation &&
+        !$('thresh').value) {
       $('thresh').value = s.metrics.float.threshold.toFixed(2);
     }
-    if (monitoring) { $('thresh').value = s.threshold; }
+    if (monitoring) {
+      $('thresh').value = (s.threshold === null || s.threshold === undefined) ? '' : s.threshold;
+    }
   } catch (e) {
     setConn('未连接：' + (e.message || e), true);
   }

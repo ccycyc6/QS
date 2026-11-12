@@ -47,12 +47,15 @@ def main() -> int:
     names = parse_names(args.names) if args.names else load_classes()
     k = len(names)
     if args.threshold is None:
-        args.threshold = 0.0
         ev = out_dir() / "eval.json"
         if ev.exists():
             try:
-                args.threshold = float(json.loads(ev.read_text())["float"]["threshold"])
-                print(f"confidence threshold {args.threshold:.2f} (from {ev})")
+                f = json.loads(ev.read_text())["float"]
+                if f.get("clean_separation") and f.get("threshold") is not None:
+                    args.threshold = float(f["threshold"])
+                    print(f"confidence threshold {args.threshold:.2f} (from {ev})")
+                else:
+                    print("no clean eval threshold; showing every gesture class")
             except Exception:  # noqa: BLE001
                 pass
     state = torch.load(args.ckpt, map_location="cpu")
@@ -113,7 +116,7 @@ def main() -> int:
                 cv2.line(draw, (gxx, 0), (gxx, FRAME_H), (35, 35, 35), 1)
             for gyy in range(0, FRAME_H, 160):
                 cv2.line(draw, (0, gyy), (FRAME_W, gyy), (35, 35, 35), 1)
-            show = cls > 0 and conf >= args.threshold
+            show = cls > 0 and (args.threshold is None or conf >= args.threshold)
             if show:
                 cx, cy = gx * 16 + 8, gy * 16 + 8
                 x0, y0 = max(0, cx - 32), max(0, cy - 20)

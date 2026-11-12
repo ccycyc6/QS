@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import sys
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from common import (
     cell_of,
     format_report,
     letterbox,
+    class_counts,
     load_classes,
     out_dir,
     raw_dir,
@@ -42,7 +44,13 @@ def load_checkpoint(ckpt: str) -> dict:
 
 
 def apply_threshold(preds, thresh):
-    """Below-threshold gesture detections become background."""
+    """Below-threshold gesture detections become background.
+
+    thresh=None means "no threshold" and must stay that way: a trained model can
+    have all-negative logits, so threshold 0 would hide every detection.
+    """
+    if thresh is None:
+        return list(preds)
     return [p if (p[0] == 0 or p[3] >= thresh) else (0, p[1], p[2], p[3]) for p in preds]
 
 
@@ -55,18 +63,21 @@ def suggest_threshold(y_true, preds):
     neg = [p[3] for t, p in zip(y_true, preds) if t == 0]
     pos = [p[3] for t, p in zip(y_true, preds) if t > 0]
     if not neg or not pos:
-        return 0.0, False
+        # No way to calibrate a threshold on this split.  Do not invent 0.0:
+        # a model with negative logits would then hide every detection.
+        return None, False
     hi_neg, lo_pos = max(neg), min(pos)
     if hi_neg < lo_pos:
         return (hi_neg + lo_pos) / 2.0, True
-    # overlapping confidences: pick the threshold with the best accuracy
-    best_t, best = 0.0, -1.0
-    for t in sorted(set(neg + pos)):
+    # overlapping confidences: pick the threshold with the best accuracy,
+    # including "no threshold" as a candidate.
+    best_t, best = None, -1.0
+    for t in [None] + sorted(set(neg + pos)):
         acc = sum(1 for y, p in zip(y_true, preds)
-                  if (0 if (p[0] > 0 and p[3] < t) else p[0]) == y) / len(y_true)
+                  if (0 if (p[0] > 0 and t is not None and p[3] < t) else p[0]) == y) / len(y_true)
         if acc > best:
-            best_t, best = float(t), acc
-    return best_t, False
+            best_t, best = t, acc
+    return (None if best_t is None else float(best_t)), False
 
 
 def float_predict(net, files, batch, device):
@@ -109,6 +120,8 @@ def main() -> int:
     ap.add_argument("--max-samples", type=int, default=0, help="0 = all")
     ap.add_argument("--names", default=None)
     ap.add_argument("--val-frac", type=float, default=0.2)
+    ap.add_argument("--split-mode", choices=["auto", "session", "stratified"], default=None,
+                    help="defaults to the mode used for training (gesture.json)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default=str(out_dir() / "eval.json"))
     ap.add_argument("--no-float", action="store_true")
@@ -124,7 +137,18 @@ def main() -> int:
     labels = read_labels(args.data)
     if not labels:
         raise SystemExit("no labels.csv")
-    train_l, val_l = split_labels(labels, args.val_frac, args.seed)
+
+    split_mode = args.split_mode
+    if split_mode is None:
+        meta_path = Path(args.ckpt).with_suffix(".json")
+        split_mode = "auto"
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                split_mode = (meta.get("args") or {}).get("split_mode") or "auto"
+            except Exception:  # noqa: BLE001
+                split_mode = "auto"
+    train_l, val_l = split_labels(labels, args.val_frac, args.seed, split_mode)
     if args.split == "val":
         eval_labels = val_l
     elif args.split == "train":
@@ -138,9 +162,15 @@ def main() -> int:
     root = Path(args.data)
     files = [root / l.file for l in eval_labels]
     y_true = [l.cls for l in eval_labels]
-    print(f"evaluating {len(eval_labels)} frames on split={args.split}")
+    print(f"evaluating {len(eval_labels)} frames on split={args.split} "
+          f"(mode={split_mode})")
+    print("  classes:", class_counts(eval_labels))
+    missing = [names[c] for c in range(k) if c not in {l.cls for l in eval_labels}]
+    if missing:
+        print("  warning: eval set has no samples for: " + ", ".join(missing))
 
-    result = {"split": args.split, "n": len(eval_labels), "names": names}
+    result = {"split": args.split, "split_mode": split_mode,
+              "n": len(eval_labels), "names": names}
     if not args.no_float:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         state = load_checkpoint(args.ckpt)
@@ -162,7 +192,8 @@ def main() -> int:
         rep["threshold"] = t_float
         rep["clean_separation"] = clean
         result["float"] = rep
-        print(f"\n== float (PyTorch), threshold {t_float:.2f}"
+        tstr = "none" if t_float is None else f"{t_float:.2f}"
+        print(f"\n== float (PyTorch), threshold {tstr}"
               f"{' (clean gap)' if clean else ' (best-effort)'} ==")
         print(format_report(rep))
         if rep["localisation_acc"] is not None:
@@ -195,7 +226,8 @@ def main() -> int:
         rep["threshold"] = t_int
         rep["clean_separation"] = clean_int
         result["bit_exact"] = rep
-        print(f"\n== bit-exact (hw_emulate, what the board shows), threshold {t_int:.1f}"
+        tstr = "none" if t_int is None else f"{t_int:.1f}"
+        print(f"\n== bit-exact (hw_emulate, what the board shows), threshold {tstr}"
               f"{' (clean gap)' if clean_int else ' (best-effort)'} ==")
         print(format_report(rep))
         if rep["localisation_acc"] is not None:

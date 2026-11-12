@@ -65,12 +65,19 @@ def int_conv(x, w, b, stride, pad):
     return y[0].round().to(torch.int64).numpy()
 
 
-def quantise_weights(w, b):
+def quantise_weights(w, b, c_in: float = 1.0):
+    """Quantise one layer.
+
+    c_in is the accumulated activation scale: the integer input of this layer
+    is c_in times the float activation.  Scaling the bias by c_in keeps the
+    integer network a scalar multiple of the float network; without it the
+    bias term drifts layer by layer and can dominate the final argmax.
+    """
     amax = float(np.abs(w).max())
     scale = (amax / 255.0) if amax > 0 else 1.0
     wq = np.clip(np.round(w / scale), -256, 255).astype(np.int32)
-    bq = np.clip(np.round(b / scale), -(2**22), 2**22 - 1).astype(np.int64)
-    return wq, bq
+    bq = np.clip(np.round(b * c_in / scale), -(2**22), 2**22 - 1).astype(np.int64)
+    return wq, bq, scale
 
 
 def pick_shift(peak, ceiling=127):
@@ -91,9 +98,9 @@ def requantise(acc, shift, relu):
     return out
 
 
-def quantise(w, b, x, stride, kernel, relu, ceiling=127):
-    """Single-image helper kept for callers that want the old behaviour."""
-    wq, bq = quantise_weights(w, b)
+def quantise(w, b, x, stride, kernel, relu, ceiling=127, c_in: float = 1.0):
+    """Single-image helper (keeps the corrected bias scaling)."""
+    wq, bq, _ = quantise_weights(w, b, c_in)
     acc = int_conv(x, wq, bq, stride, kernel // 2)
     shift = pick_shift(np.abs(acc).max(), ceiling)
     return wq, bq.astype(np.int32), shift, requantise(acc, shift, relu)
@@ -155,6 +162,10 @@ def main():
     ap.add_argument('--calib-seed', type=int, default=0)
     ap.add_argument('--shift-ceiling', type=int, default=127,
                     help='max representable magnitude after the shift (127 = no clipping)')
+    ap.add_argument('--bias-mode', choices=['corrected', 'legacy'], default='corrected',
+                    help='corrected scales each bias by the accumulated activation scale')
+    ap.add_argument('--input-scale', type=float, default=128.0,
+                    help='training input scale: q0 = round(x_norm * input-scale)')
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -176,6 +187,8 @@ def main():
     print(f'calibration frames: {len(ref_imgs)}')
 
     inputs = {'in': ref_imgs}
+    corrected = args.bias_mode == 'corrected'
+    c_in = float(args.input_scale) if corrected else 1.0
     for idx, attr, k, stride, relu in LAYERS:
         conv_name, relu_name = mat_names(idx)
         xs = inputs[SRC[idx]]
@@ -183,13 +196,15 @@ def main():
         w = layer.weight.detach().numpy()
         b = layer.bias.detach().numpy()
 
-        wq, bq = quantise_weights(w, b)
+        wq, bq, scale = quantise_weights(w, b, c_in)
         accs = [int_conv(x, wq, bq, stride, k // 2) for x in xs]
         peak = max(int(np.abs(a).max()) for a in accs)
         shift = pick_shift(peak, args.shift_ceiling)
         outs = [requantise(a, shift, relu) for a in accs]
         clipped = max(float(np.mean(np.abs(a >> shift) > 127)) for a in accs)
         inputs[idx] = outs
+        if corrected:
+            c_in = c_in / (scale * (2 ** shift))
 
         sio.savemat(os.path.join(args.out, conv_name + '.mat'), {
             'weight': wq,
@@ -202,7 +217,8 @@ def main():
             sio.savemat(os.path.join(args.out, relu_name + '.mat'), {'shift_k': float(shift)})
 
         print(f'{conv_name:16s} {tuple(wq.shape)} stride={stride} peak={peak:>8d} '
-              f'shift={shift} clip={clipped * 100:.2f}% out={outs[0].shape}')
+              f'shift={shift} clip={clipped * 100:.2f}% '
+              f'bias_max={int(np.abs(bq).max())} out={outs[0].shape}')
 
     print('done ->', args.out)
 

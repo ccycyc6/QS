@@ -128,7 +128,9 @@ bash pcvision/gesture/record.sh --rounds 4
 
 录制要点：
 - 手放在绿框内，**距离 0.3–0.6 m**，让手掌约占画面 1/5；
-- 每类录 4–8 轮（40 张/轮），换一点角度、距离、背景，**总样本 150–300 张/类**；
+- **至少 3 个完整轮次**（40 张/轮），最好 4–8 轮，换角度、距离、背景、
+  光照，**总样本 150–300 张/类**。只录 1 轮时，验证集看着高但实时很容易
+  误报/认错——第一版 7 类数据就是 1 个完整轮次，实时会把普通画面判成 fist；
 - 背景类建议分 2 轮录（空画面 + 有手但不做手势），合计 80 张以上；
 - 每轮录制是一个独立 `session`；**验证集按 session 切分**，避免同一段视频
   泄漏进验证集；
@@ -211,9 +213,23 @@ bash pcvision/gesture/run_pipeline.sh eval     # float + 位精确对比
 
 - `export` 会用 `data/raw` 里按类别均衡抽样 8 张做校准，逐层选幂次移位
   `shift_k`，并打印每层峰值与裁剪比例；
+- **偏置按累积激活尺度修正**（默认 `--bias-mode corrected`）。这一步不能省：
+  第一版导出器只按 `1/scale` 缩放偏置，7 类手势模型量化后**全判背景**
+  （int 11%）；修正后 float/int 都是 **89.04%**、一致率 **100%**。
+  只有复现旧结果时才用 `--bias-mode legacy`；
 - `eval` 同时报告 **PyTorch float** 和 **hw_emulate 整数** 的准确率、
   每类召回、负样本误报率、混淆矩阵；
 - 两者差距大 = 量化不可接受，先回到训练（加数据/调 `--sigma`），不要上板。
+
+### 训练/验证切分（`--split-mode`）
+
+- `auto`（默认）：优先整 session 切分；如果某个 session 不完整（缺少类别）
+  或验证集超过一半，则退回**按类别分层抽样**；
+- `session`：只按 session 切，绝不泄漏相邻帧，但数据少时验证集可能缺类；
+- `stratified`：每类随机抽，保证验证集覆盖所有类别。
+
+> 分层抽样的验证帧与训练帧来自同一段录制，**89% 是偏乐观的**；真实泛化
+> 要看新录的 session。工作台/训练日志会打印验证集类别，务必确认没有缺类。
 
 ### 置信度阈值（必须一起看）
 
@@ -224,9 +240,12 @@ bash pcvision/gesture/run_pipeline.sh eval     # float + 位精确对比
     samples 32  frame-accuracy 100.00%
 
 - `clean gap` = 负样本分数全部低于真手势，阈值能完全分开；
-- 没有干净分界时会给 best-effort 阈值，并降低整体准确率；
-- 阈值写进 `out/eval.json` 的 `threshold` 字段；`live_demo.py` 会自动读取
-  float 阈值；板端对应 `frame_argmax` 的 `CONF_THRESH`（或 RV/PC 后处理）。
+- **没有负样本/正样本，或分数重叠时，阈值为 `none`（不启用）**，不会
+  硬塞一个 0.0。早期版本把阈值设成 0.0，而模型 logit 是负数，实时监测
+  就把所有检测都当成“no gesture”藏掉了；
+- 阈值写进 `out/eval.json` 的 `threshold` 字段（可能为 `null`）；
+  `live_demo.py` / 工作台只在 `clean_separation=true` 时自动采用；
+  板端对应 `frame_argmax` 的 `CONF_THRESH`（或 RV/PC 后处理）；
 - 强制指定：`bash pcvision/gesture/run_pipeline.sh eval --thresh 50`。
 
 结果：`out/eval.json`、`out/eval.csv`（逐帧 float/int 对照）。
@@ -354,7 +373,9 @@ bash pcvision/gesture/run_pipeline.sh smoke
 | 训练 loss 不降 | 类别是否只录了背景；`labels.csv` 的 cls 是否 1..K-1；学习率降到 1e-4 |
 | 验证准确率高、实拍差 | 数据太少/太单一；补录不同背景、距离、光照；检查 session 切分 |
 | float 好、位精确差 | `export` 的 `clip%` 是否过高；增加校准帧；回训练降低激活范围 |
-| 所有帧都判背景 | 背景类样本占比过高；确认正样本有手；调大 `--frame-loss` 或补正样本 |
+| 所有帧都判背景 | 先看 `eval.json` 的 `bit_exact`：若 int 远低于 float，用默认 `--bias-mode corrected` 重导；若两者都低，补正样本/背景 |
+| 实时有类别但没框 | 阈值被设成 0 且 logit 为负；把阈值留空（`null`），或看“最近检测”里的 conf |
+| 实时一直判某个手势 | 该类样本过多/背景太少；补 2–3 轮背景和不同角度，别只录同一姿势 |
 | 上板无框/全错 | 先跑 `hw_emulate --verify`；确认输入真是 720p60；再查域差异 |
 | 训练很慢 | 确认 `doctor.sh` 里 CUDA available=True；`--workers 4`；batch 提到 8 |
 

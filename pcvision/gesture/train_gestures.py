@@ -112,6 +112,7 @@ def main() -> int:
     ap.add_argument("--hflip", type=float, default=0.0)
     ap.add_argument("--frame-loss", type=float, default=1.0)
     ap.add_argument("--val-frac", type=float, default=0.2)
+    ap.add_argument("--split-mode", choices=["auto", "session", "stratified"], default="auto")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--names", default=None, help="comma separated gesture names")
     ap.add_argument("--patience", type=int, default=20)
@@ -131,7 +132,7 @@ def main() -> int:
     max_cls = max(l.cls for l in labels)
     if max_cls >= k:
         raise SystemExit(f"labels contain class {max_cls} but only {k} classes configured")
-    train_labels, val_labels = split_labels(labels, args.val_frac, args.seed)
+    train_labels, val_labels = split_labels(labels, args.val_frac, args.seed, args.split_mode)
     if not val_labels:
         val_labels = train_labels
         print("warning: no separate validation split (record more sessions)")
@@ -139,7 +140,11 @@ def main() -> int:
     print("classes:", ", ".join(f"{i}={n}" for i, n in enumerate(names)))
     counts = class_counts(train_labels)
     print("train:", len(train_labels), counts)
-    print("val  :", len(val_labels), class_counts(val_labels))
+    val_counts = class_counts(val_labels)
+    print("val  :", len(val_labels), val_counts)
+    missing = [names[c] for c in range(k) if c not in val_counts]
+    if missing:
+        print("warning: validation set has no samples for: " + ", ".join(missing))
     if counts.get(0, 0) == 0:
         print("warning: no background (class 0) samples - the model will false-trigger; "
               "record the background stage")
