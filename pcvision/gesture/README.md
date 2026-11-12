@@ -8,6 +8,7 @@
 ```bash
 bash setup_env.sh                 # 一次性：隔离 venv（仓库外）
 bash doctor.sh                    # CUDA / 摄像头 / 显示自检
+bash app.sh                       # 网页工作台 http://127.0.0.1:8765
 bash record.sh --rounds 4         # 引导式采集 4 轮（每类按一次空格）
 bash run_pipeline.sh all          # 训练 -> 量化 -> 位精确评估 -> 打包
 bash monitor.sh                   # 实时监测（q 退出）
@@ -19,6 +20,7 @@ bash cleanup.sh                   # 预览清理；--yes 真删
 
 | 文件 | 作用 |
 |---|---|
+| `app.sh` / `webapp.py` | 网页工作台（采集/训练/评估/监测） |
 | `env.sh` | 工作区与缓存重定向（pip/torch/xdg 都进工作区） |
 | `setup_env.sh` | 建 venv、装 torch（默认 cu124）+ opencv 等 |
 | `doctor.sh` | 包 / CUDA / 摄像头 / DISPLAY 自检 |

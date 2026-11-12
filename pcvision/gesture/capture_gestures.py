@@ -240,7 +240,7 @@ def run_manual(rec: Recorder, args) -> None:
         if key == ord("q"):
             break
         if ord("0") <= key <= ord("9"):
-            cls = key - ord("0")
+            cls = min(key - ord("0"), len(rec.names) - 1)
         elif key == ord("["):
             cls = max(0, cls - 1)
         elif key == ord("]"):

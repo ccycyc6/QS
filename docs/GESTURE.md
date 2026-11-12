@@ -9,22 +9,32 @@
 
 ---
 
-## 0. 最短路径（先跑通实时监测）
-
-只做 3 个手势 + 背景，四条约 5–10 分钟：
+## 0. 最短路径（推荐工作台）
 
 ```bash
 cd /home/ccy/Documents/qs/QS
-bash pcvision/gesture/doctor.sh
-bash pcvision/gesture/record.sh --rounds 4 --names fist,open_palm,point
-bash pcvision/gesture/run_pipeline.sh all
-bash pcvision/gesture/monitor.sh
+bash pcvision/gesture/app.sh
+# 浏览器打开 http://127.0.0.1:8765
 ```
 
-- `record.sh` 每类按一次 Space，4 轮 = 4 个 session，验证集才可信；
-- `run_pipeline.sh all` = 训练 → 量化 → float/位精确评估 → 打包；
-- `monitor.sh` 打开摄像头实时显示类别/置信度/框；`q` 退出。
-- 想要 6 个手势就改 `--names`，或直接删掉 `data/classes.json` 后重录。
+一个网页里完成：摄像头预览 → 采集 → 训练 → 量化+评估 → 实时监测，
+右侧有日志和重置按钮。流程：
+
+1. 在“1 采集”里填手势名（例如 `fist,open_palm,point`），点“应用类别”；
+2. 点“开始引导录制”，按画面提示做动作；每类 4 轮，背景轮空手；
+3. “2 训练”点“开始训练”（默认 60 epoch）；
+4. “3 量化 + 评估”点“导出 .mat 并评估”，看两个准确率和阈值；
+5. “4 实时监测”点“开始监测”，实时看类别/置信度/框。
+
+> 工作台只是把下面这些 CLI 包了一层，两者可以混用。
+> 不想开网页时：
+>
+> ```bash
+> bash pcvision/gesture/doctor.sh
+> bash pcvision/gesture/record.sh --rounds 4 --names fist,open_palm,point
+> bash pcvision/gesture/run_pipeline.sh all
+> bash pcvision/gesture/monitor.sh
+> ```
 
 ---
 
@@ -234,6 +244,8 @@ $QS_GESTURE_HOME/env/bin/python pcvision/hw_emulate.py \
 
 ## 6. 实时监测（训练完成后）
 
+工作台第 4 栏直接点“开始监测”即可。命令行方式：
+
 ```bash
 bash pcvision/gesture/monitor.sh
 # 等价于：
@@ -351,6 +363,8 @@ bash pcvision/gesture/run_pipeline.sh smoke
 ## 10. 文件一览
 
     pcvision/gesture/
+    ├── app.sh               启动网页工作台
+    ├── webapp.py            工作台服务端 + 单页 UI
     ├── env.sh               环境变量（工作区、缓存重定向）
     ├── setup_env.sh         建 venv、装 torch/opencv
     ├── doctor.sh            环境 + 摄像头自检
