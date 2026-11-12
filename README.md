@@ -31,25 +31,17 @@
 ## 目录
 
     ScreenSense/
+    ├── cam/                        摄像头 → DDR3 → HDMI（可构建，4 分钟出位流）
+    │   ├── rtl/video/              37 个 RTL + yolo_stream / det_to_box / yolo_pll
+    │   └── fpga/pango/             约束 + DDR3 IP + flow_cam.tcl
     ├── fpga/
-    │   ├── rtl_pds/                  视觉 RTL（11 层网络 + overlay + DDR + HDMI）
-    │   ├── prj_pds/                  PDS 工程 + 4 个 IP（ms72/PLL/ip_fifo/ddr3_test）
-    │   ├── conv_data_yolov3_new_pds/ YOLO 权重 .mat（133 MB）
-    │   ├── conv_data_hex_pds/        仿真输入 hex（43 MB）
-    │   ├── python_script/            权重生成器
-    │   ├── sim_pds/                  16 个 testbench
-    │   ├── ares/                     ARES RV32IM 核（未改源码）
-    │   ├── rtl_rv/                   新增：rv_top / rv_mmio / frame_argmax / uart_tx / ctrl_frame / 固件
-    │   ├── tools/                    引脚脚本 + 仿真脚本
-    │   └── doc/                      原复现指南
-    ├── pc/
-    │   ├── host/                     上位机（UDP + vgamepad）
-    │   └── reference/                原项目 PRD / 技术设计
-    ├── bitstreams/                   已生成位流
-    ├── tools/                        构建脚本
-    └── docs/PROGRESS.md              进度记录
-
----
+    │   ├── rtl_pds/                只留 YOLO 前端（top_yolo + 13 个层模块 + 权重 mem）
+    │   ├── python_script/          权重打包生成器
+    │   └── ares/                   RISC-V 核（另一条线，本线未使用）
+    ├── ml/                         训练模板 / .mat 导出 / 硬件打包
+    ├── docs/                       MODEL.md（模型合同）/ PROGRESS.md（进度）
+    ├── bitstreams/cam_yolo.sbit    当前位流
+    └── tools/                      烧写脚本
 
 ## 关键事实
 
@@ -94,4 +86,5 @@ powershell -File fpga/rtl_rv/fw/build_fw.ps1
 
 ---
 
-详细进度、实测数据、踩过的坑、决策记录见 [docs/PROGRESS.md](docs/PROGRESS.md)。
+模型怎么训、怎么插进来见 [docs/MODEL.md](docs/MODEL.md)；
+进度、实测数据、踩过的坑见 [docs/PROGRESS.md](docs/PROGRESS.md)。
