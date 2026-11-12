@@ -9,6 +9,25 @@
 
 ---
 
+## 0. 最短路径（先跑通实时监测）
+
+只做 3 个手势 + 背景，四条约 5–10 分钟：
+
+```bash
+cd /home/ccy/Documents/qs/QS
+bash pcvision/gesture/doctor.sh
+bash pcvision/gesture/record.sh --rounds 4 --names fist,open_palm,point
+bash pcvision/gesture/run_pipeline.sh all
+bash pcvision/gesture/monitor.sh
+```
+
+- `record.sh` 每类按一次 Space，4 轮 = 4 个 session，验证集才可信；
+- `run_pipeline.sh all` = 训练 → 量化 → float/位精确评估 → 打包；
+- `monitor.sh` 打开摄像头实时显示类别/置信度/框；`q` 退出。
+- 想要 6 个手势就改 `--names`，或直接删掉 `data/classes.json` 后重录。
+
+---
+
 ## 1. 两条边界，先看清楚
 
 | 能力 | 跑在哪 | 说明 |
@@ -19,6 +38,15 @@
 
 类别约定：**class 0 = 背景/无手势**，手势从 1 开始，最多 **15 个手势**
 （头部层固定 16 通道，`pack_model.py` 会自动补齐到 16）。
+
+### 和旧车牌内容的关系
+
+这条链路**不读取**旧车牌的权重、图片、标注或 LPRNet 支路。旧车牌只存在于
+历史视觉 demo（`cam/`、`fpga/rtl_pds` 的 LPRNet、旧位流）里；手势训练只复用
+**11 层 conv/ReLU 的单帧 80×45 骨架**。上板打包时 `pack_model.py` 直接用你的
+手势权重覆盖 11 层的 `.mem/.vh`，不会把车牌权重带进去。
+
+是否把 LPRNet/车牌资产从仓库里**物理删除**，见第 11 节。
 
 ---
 
@@ -80,12 +108,13 @@ bash pcvision/gesture/record.sh --names fist,open_palm,point,victory
 ### 3.2 引导式录制（推荐）
 
 ```bash
-bash pcvision/gesture/record.sh
+bash pcvision/gesture/record.sh --rounds 4
 ```
 
 流程：每个类别按一次 **Space** → 3 秒倒计时 → 自动录 `--seconds` 秒
 （默认 8 秒 × 5 帧/秒 = 40 张）→ 自动进入下一类。最后会自动录一类
-**背景（无手势）**。窗口里绿框是建议手部区域，十字是标签中心。
+**背景（无手势）**。一轮结束后自动开始下一轮；**每轮是独立 session**，
+用于可信的训练/验证切分。窗口里绿框是建议手部区域，十字是标签中心。
 
 录制要点：
 - 手放在绿框内，**距离 0.3–0.6 m**，让手掌约占画面 1/5；
@@ -203,11 +232,13 @@ $QS_GESTURE_HOME/env/bin/python pcvision/hw_emulate.py \
 
 ---
 
-## 6. 实时演示（可选）
+## 6. 实时监测（训练完成后）
 
 ```bash
-$QS_GESTURE_HOME/env/bin/python pcvision/gesture/live_demo.py \
-    --ckpt $QS_GESTURE_HOME/runs/gesture.pt
+bash pcvision/gesture/monitor.sh
+# 等价于：
+# $QS_GESTURE_HOME/env/bin/python pcvision/gesture/live_demo.py \
+#     --ckpt $QS_GESTURE_HOME/runs/gesture.pt
 ```
 
 - 实时显示类别、置信度、命中的格子与框；
@@ -335,4 +366,33 @@ bash pcvision/gesture/run_pipeline.sh smoke
     ├── actions.py           时序动作层（hold/swipe）
     ├── test_actions.py      动作层单测
     ├── smoke_test.py        合成数据全链路冒烟
+    ├── monitor.sh           实时监测入口（调用 live_demo）
     └── run_pipeline.sh      train / export / eval / pack / all
+
+```bash
+bash pcvision/gesture/monitor.sh        # 实时监测
+```
+
+---
+
+## 11. 彻底移除旧车牌资产（可选，建议跑通实时监测后再做）
+
+手势链路本身不依赖旧车牌；但仓库里仍有历史 demo 的资产。要变成“纯手势工程”，
+按下面清单裁剪，**不要动 11 层卷积骨架**：
+
+| 保留（手势复用） | 删除（车牌专属） |
+|---|---|
+| `fpga/rtl_pds/top_yolo` 的 11 层 conv/ReLU | LPRNet 支路（layer20–31、char decode、crop） |
+| HDMI 收发、DDR 帧缓冲、`frame_argmax` | 车牌测试图、车牌标注、车牌文档段落 |
+| RV 调度器 / UART（动作层以后要用） | `bitstreams/cam_yolo.sbit`（车牌位流） |
+| `.vh/.mem` 覆盖机制 | 旧车牌权重 `.mem`（打包时本来就会被覆盖） |
+
+步骤建议：
+
+1. 先用手势模型跑通 `monitor.sh`（PC 侧完全不碰 RTL）；
+2. 在 Windows 工程里注释/删除 LPRNet 例化与约束，只保留 11 层视觉骨架 + 输出；
+3. 覆盖手势 `.vh/.mem`，重跑 PDS，出 **gesture-only** 位流；
+4. 重新测资源/时序（删掉 LPRNet 后 LUT/DRAM 会更宽松，但要以 PDS 报告为准）。
+
+> 删除 `cam/`、LPRNet 或旧位流会影响原车牌 demo 的可复现性；建议在确认不再
+> 需要车牌后，单独开一个分支做裁剪，不要和手势训练混在一起。

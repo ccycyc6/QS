@@ -265,7 +265,7 @@ def run_manual(rec: Recorder, args) -> None:
         cv2.imshow("gesture capture", rec.overlay(rec.clean, cls, center, text))
 
 
-def run_guided(rec: Recorder, args) -> None:
+def run_guided(rec: Recorder, args) -> bool:
     order = list(range(1, len(rec.names))) + [0]
     save_dt = 1.0 / max(0.5, args.save_fps)
 
@@ -289,7 +289,7 @@ def run_guided(rec: Recorder, args) -> None:
             if k == 32:
                 break
             if k == ord("q"):
-                return
+                return False
             if k == ord("s"):
                 break
         if k == ord("s"):
@@ -305,7 +305,7 @@ def run_guided(rec: Recorder, args) -> None:
             cv2.imshow("gesture capture", rec.overlay(
                 rec.clean, cls, center, f"starting {name} in {left:.1f}s"))
             if wait_key(10) == ord("q"):
-                return
+                return False
         # 3) record
         rec.read()
         t0 = time.time()
@@ -324,9 +324,10 @@ def run_guided(rec: Recorder, args) -> None:
             cv2.imshow("gesture capture", rec.overlay(
                 rec.clean, cls, center, f"recording {name}: {n_saved} frames, {left:.1f}s left"))
             if wait_key(1) == ord("q"):
-                return
+                return False
         print(f"  {name}: +{n_saved}")
     print("guided recording complete")
+    return True
 
 
 def selftest(args, names: list[str]) -> int:
@@ -382,11 +383,15 @@ def main() -> int:
         return selftest(args, names)
     print("classes:", "  ".join(f"{i}={n}" for i, n in enumerate(names)))
     rec = Recorder(args, names)
+    completed = True
     try:
-        run_guided(rec, args) if args.guided else run_manual(rec, args)
+        if args.guided:
+            completed = run_guided(rec, args)
+        else:
+            run_manual(rec, args)
     finally:
         rec.finish()
-    return 0
+    return 0 if completed else 1
 
 
 if __name__ == "__main__":

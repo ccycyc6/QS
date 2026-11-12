@@ -1,5 +1,9 @@
 # ScreenSense
 
+> **当前主线：实时手势监测。** 见 [docs/GESTURE.md](docs/GESTURE.md)。
+> 下文的车牌 YOLO / LPRNet 是历史视觉 demo，手势链路不读取它的权重、
+> 图片或标注；上板时只复用 11 层卷积骨架，并用你训练的手势权重覆盖。
+
 **两条互不依赖的线，跑在同一颗 FPGA 上。**
 
 - **线 A（控制）** 加速度计 → FPGA 采集 → 串口 → PC → 虚拟手柄 → 游戏。
@@ -85,7 +89,7 @@ bash doctor.sh         # 逐项自检：包、CUDA、摄像头、权限、图形
 ```bash
 bash pcvision/gesture/setup_env.sh              # 一次性：venv + torch/cu124
 bash pcvision/gesture/doctor.sh                 # 摄像头/CUDA 自检
-bash pcvision/gesture/record.sh                 # 引导式采集（每类按一次空格）
+bash pcvision/gesture/record.sh --rounds 4      # 引导式采集（每类按一次空格）
 bash pcvision/gesture/run_pipeline.sh all       # 训练→量化→位精确评估→打包
 bash pcvision/gesture/manifest.sh               # 安装清单（体积）
 bash pcvision/gesture/cleanup.sh                # 预览清理；--yes 执行

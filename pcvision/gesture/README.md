@@ -8,8 +8,9 @@
 ```bash
 bash setup_env.sh                 # 一次性：隔离 venv（仓库外）
 bash doctor.sh                    # CUDA / 摄像头 / 显示自检
-bash record.sh                    # 引导式采集（每类按一次空格）
+bash record.sh --rounds 4         # 引导式采集 4 轮（每类按一次空格）
 bash run_pipeline.sh all          # 训练 -> 量化 -> 位精确评估 -> 打包
+bash monitor.sh                   # 实时监测（q 退出）
 bash manifest.sh                  # 看装了什么、占多大
 bash cleanup.sh                   # 预览清理；--yes 真删
 ```
@@ -26,7 +27,8 @@ bash cleanup.sh                   # 预览清理；--yes 真删
 | `dataset.py` | Dataset 与增广（几何 + 光度） |
 | `train_gestures.py` | 逐格 focal + 整帧 CE |
 | `evaluate.py` | float / 位精确双评估 |
-| `live_demo.py` | 实时摄像头演示 |
+| `live_demo.py` | 实时摄像头监测与动作事件 |
+| `monitor.sh` | 实时监测入口（默认读 `runs/gesture.pt`） |
 | `actions.py` / `test_actions.py` | hold/swipe 时序动作层与单测 |
 | `smoke_test.py` | 合成数据全链路自检 |
 | `run_pipeline.sh` | train / export / eval / pack / all / smoke / status |
