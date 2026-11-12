@@ -37,3 +37,8 @@ cam/fpga/pango/impl.tcl
 tools/smoke/*.pds
 tools/smoke/impl.tcl
 ml/__pycache__/
+# pcvision working data
+pcvision/.venv/
+pcvision/data/
+build/
+__pycache__/

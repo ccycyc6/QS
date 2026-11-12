@@ -1,0 +1,2 @@
+# keep the Linux scripts runnable after a Windows checkout
+*.sh text eol=lf

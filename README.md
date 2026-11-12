@@ -58,7 +58,27 @@
 
 ---
 
-## 构建
+## 两个系统怎么用
+
+| 系统 | 路径 | 用途 |
+|---|---|---|
+| **Ubuntu**（真机，双系统） | `/mnt/e/qs/ScreenSense` | 采集、训练、量化、位精确预览、打包 |
+| **Windows** | `E:\qs\ScreenSense` | PDS 综合、JTAG 烧写 |
+
+仓库在同一个 NTFS 分区上，两侧共用，不用拷文件。
+完整步骤见 [docs/WORKFLOW.md](docs/WORKFLOW.md)。
+
+Ubuntu 侧第一次用先跑：
+
+```bash
+cd /mnt/e/qs/ScreenSense/pcvision
+bash setup.sh          # 建 venv、装依赖（--cuda 可装 GPU 版 torch）
+bash doctor.sh         # 逐项自检：包、CUDA、摄像头、权限、图形会话
+```
+
+---
+
+## 构建（Windows）
 
 ```
 # 基线（仅视觉）
