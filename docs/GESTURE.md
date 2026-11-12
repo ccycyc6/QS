@@ -49,6 +49,10 @@ bash pcvision/gesture/app.sh
 类别约定：**class 0 = 背景/无手势**，手势从 1 开始，最多 **15 个手势**
 （头部层固定 16 通道，`pack_model.py` 会自动补齐到 16）。
 
+> 手机 IMU + MediaPipe 的 5 个游戏动作（攻击/治疗/举盾/弹反/闪避）是**另一条线**，
+> 对应 `pc/host`，评估见 [ACTION_CONTROLLER.md](ACTION_CONTROLLER.md)；
+> 它不使用本页的手势 CNN，也不能直接跑在 FPGA 上。
+
 ### 和旧车牌内容的关系
 
 这条链路**不读取**旧车牌的权重、图片、标注或 LPRNet 支路。旧车牌只存在于

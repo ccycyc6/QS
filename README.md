@@ -44,8 +44,10 @@
     │   └── ares/                   RISC-V 核（另一条线，本线未使用）
     ├── ml/                         训练模板 / .mat 导出 / 硬件打包
     ├── pcvision/gesture/           手势全链路：采集→训练→量化→位精确→打包
+    ├── pc/host/                    手机 IMU + MediaPipe 动作控制器（PC/Windows）
     ├── docs/                       MODEL.md（模型合同）/ PROGRESS.md（进度）
     │                               GESTURE.md（手势训练与上板）
+    │                               ACTION_CONTROLLER.md（动作控制器评估）
     ├── bitstreams/cam_yolo.sbit    当前位流
     └── tools/                      烧写脚本
 

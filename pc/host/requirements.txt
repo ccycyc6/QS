@@ -1,5 +1,9 @@
-mediapipe==0.10.9
-vgamepad
-opencv-python
-numpy
+# Immersive Controller PC host (Windows target)
+# mediapipe 0.10.21 is the last 0.10.x line tested here that still exposes
+# mp.solutions.hands/pose AND has a Python 3.12 wheel.  0.10.35 removed
+# mp.solutions; 0.10.9 has no cp312 wheel.
+mediapipe==0.10.21
+numpy<2
+opencv-contrib-python
+vgamepad ; sys_platform == "win32"
 pytest
