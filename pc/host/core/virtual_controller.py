@@ -1,15 +1,8 @@
-try:
-    import vgamepad as vg
-except Exception:  # Windows-only; allows a dry-run of the CV side on Linux
-    vg = None
+import vgamepad as vg
 import time
 
 class VirtualController:
     def __init__(self):
-        if vg is None:
-            print("vgamepad not available (Windows + ViGEmBus required); gamepad disabled.")
-            self.gamepad = None
-            return
         try:
             self.gamepad = vg.VX360Gamepad()
             print("Virtual Controller (Xbox 360) initialized.")

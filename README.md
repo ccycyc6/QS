@@ -1,24 +1,27 @@
 # ScreenSense
 
-> **当前主线：实时手势监测。** 见 [docs/GESTURE.md](docs/GESTURE.md)。
-> 下文的车牌 YOLO / LPRNet 是历史视觉 demo，手势链路不读取它的权重、
-> 图片或标注；上板时只复用 11 层卷积骨架，并用你训练的手势权重覆盖。
+> **当前主线：线 B（展示）—— FPGA 实时手势/动作识别 demo。**
+> 它不参与游戏控制；手机 IMU + MediaPipe 的线 A 是独立控制线，本线不依赖、不修改。
+> 下文的 YOLO / LPRNet 是历史视觉 demo；手势链路只复用 11 层卷积骨架，
+> 并用你训练的手势权重覆盖。展示方案见 [docs/DEMO_LINE_B.md](docs/DEMO_LINE_B.md)。
 
 **两条互不依赖的线，跑在同一颗 FPGA 上。**
 
 - **线 A（控制）** 加速度计 → FPGA 采集 → 串口 → PC → 虚拟手柄 → 游戏。
 - **线 B（展示）** 摄像头/PC 画面 720p60 → FPGA 加速器 → OSD → HDMI 实时 UI。
 
-目标形态：一块盘古 200Pro+（PG2L200H），同时完成**体感控制**和**实时视觉展示**，
-并用自研 RISC-V 核（Mundus，**8 级流水**：IF/ID/IS/EX1/EX2/EX3/EX4/WB）做帧级调度。
+目标形态：一块盘古 200Pro+（PG2L200H）上跑两条独立线：
+**线 A 体感控制**（另一条线，不在本展示线范围）和 **线 B 视觉展示**（本线）。
+线 B 用自研 RISC-V 核（Mundus，**8 级流水**：IF/ID/IS/EX1/EX2/EX3/EX4/WB）
+做帧级调度，展示 CNN + RV + OSD 的协同能力。
 
 ---
 
 ## 架构
 
 ```
-线 B（视觉）
-  HDMI 720p60 ─► 11 层卷积（车牌 YOLOv3）─► post_cv3 ─► frame_argmax
+线 B（展示，本线；不进控制环）
+  HDMI 720p60 ─► 11 层卷积（手势 CNN）─► post_cv3 ─► frame_argmax
                                                   │            │
                                                   ▼            ▼
                                             box_overlay    rv_mmio ──► RV32 调度器
@@ -26,7 +29,7 @@
                                                   ▼            ▼
                                              HDMI OUT      UART（待仲裁）
 
-线 A（控制）
+线 A（控制，另一条独立线；本展示线不涉及）
   加速度计（待接）─► ctrl_frame ─► uart_tx ─► 串口 ─► PC ─► vgamepad ─► 游戏
 ```
 
@@ -44,10 +47,11 @@
     │   └── ares/                   RISC-V 核（另一条线，本线未使用）
     ├── ml/                         训练模板 / .mat 导出 / 硬件打包
     ├── pcvision/gesture/           手势全链路：采集→训练→量化→位精确→打包
-    ├── pc/host/                    手机 IMU + MediaPipe 动作控制器（PC/Windows）
+    ├── pc/host/                    线 A：手机 IMU + MediaPipe 控制器（独立，不涉及）
     ├── docs/                       MODEL.md（模型合同）/ PROGRESS.md（进度）
     │                               GESTURE.md（手势训练与上板）
-    │                               ACTION_CONTROLLER.md（动作控制器评估）
+    │                               DEMO_LINE_B.md（展示线方案）
+    │                               ACTION_CONTROLLER.md（线 A 评估，参考）
     ├── bitstreams/cam_yolo.sbit    当前位流
     └── tools/                      烧写脚本
 
@@ -84,7 +88,7 @@ bash setup.sh          # 建 venv、装依赖（--cuda 可装 GPU 版 torch）
 bash doctor.sh         # 逐项自检：包、CUDA、摄像头、权限、图形会话
 ```
 
-### 手势训练（本机 PC 摄像头）
+### 线 B 手势展示训练（本机 PC 摄像头，不参与控制）
 
 训练环境隔离在仓库外（默认 `<repo>/../gesture-env`），可整体删除腾空间：
 
@@ -121,6 +125,14 @@ powershell -File fpga/rtl_rv/fw/build_fw.ps1
 开关在 `fpga/rtl_rv/cfg_on|cfg_off/rv_cfg.vh`：定义 `WITH_RV` 与 `WITH_CTRL`。
 
 ---
+
+## 线 B 展示边界（重要）
+
+- 线 B 只做“看得见”的展示：HDMI 框/颜色 + UART 事件，**不接游戏/手柄**；
+- 线 B 的“动作”只由单帧手势 + 格子时序推导；**不用手机 IMU / MediaPipe / Pose**；
+- 线 A 的手机/手柄控制是另一条独立线，本线**不依赖、不修改**；
+- 表里的 5 个游戏动作（手机下挥/肘角/鼻速等）属于线 A，不是线 B 的验收项；
+- 线 B 的展示语义（HOLD/SWIPE/SEQUENCE）见 [docs/DEMO_LINE_B.md](docs/DEMO_LINE_B.md)。
 
 ## 边界（明确不做）
 
