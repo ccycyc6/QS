@@ -39,6 +39,7 @@ from common import (
     cell_of,
     class_counts,
     classes_path,
+    data_dir,
     ensure_dirs,
     letterbox,
     load_classes,
@@ -105,6 +106,7 @@ class Workbench:
         self.last_det = None
         self.vote = deque(maxlen=7)
         self.stable = None
+        self.mirror = bool(load_settings().get("mirror", False))
         self.job = None
         self.logs = deque(maxlen=4000)
         self.log_seq = 0
@@ -214,6 +216,8 @@ class Workbench:
             clean = letterbox(frame)
             now = time.time()
             with self.lock:
+                if self.mirror:
+                    clean = cv2.flip(clean, 1)
                 self.frame = clean
             self._guided_tick(clean, now)
             det = self._monitor_tick(clean, now)
@@ -396,10 +400,17 @@ class Workbench:
                 "monitor": self.mode == "monitor", "threshold": self.threshold,
                 "metrics": self.metrics, "train": self.train_meta, "job": job,
                 "checkpoint": (runs_dir() / "gesture.pt").exists(),
+                "mirror": self.mirror,
                 "last_det": self.last_det,
                 "stable": self.stable,
                 "events": list(self.events)[-8:],
             }
+
+    def set_mirror(self, on: bool) -> None:
+        with self.lock:
+            self.mirror = bool(on)
+        save_settings({"mirror": self.mirror})
+        self.log("mirror " + ("on" if self.mirror else "off"))
 
     def set_classes(self, names) -> None:
         names = [str(n).strip() for n in names if str(n).strip()]
@@ -636,6 +647,27 @@ def load_train_meta():
         return None
 
 
+def settings_path():
+    return data_dir() / "settings.json"
+
+
+def load_settings() -> dict:
+    p = settings_path()
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def save_settings(updates: dict) -> None:
+    cur = load_settings()
+    cur.update(updates)
+    settings_path().write_text(json.dumps(cur, ensure_ascii=False, indent=2) + "\n",
+                               encoding="utf-8")
+
+
 INDEX_HTML = """<!doctype html>
 <html lang="zh">
 <head>
@@ -661,8 +693,11 @@ INDEX_HTML = """<!doctype html>
              overflow:hidden; aspect-ratio:16/9; }
   .preview img { width:100%; height:100%; object-fit:contain; display:block;
                  cursor:crosshair; }
-  .meta { display:flex; justify-content:space-between; color:var(--muted);
+  .meta { display:flex; justify-content:space-between; align-items:center;
+          gap:10px; flex-wrap:wrap; color:var(--muted);
           font-size:12px; padding:6px 2px; }
+  .mirror { display:flex; align-items:center; gap:4px; cursor:pointer; }
+  .mirror input { accent-color:var(--acc); }
   .chips { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
   .chip { background:#202634; color:var(--text); border:1px solid var(--line);
           border-radius:999px; padding:4px 10px; cursor:pointer; font-size:12px; }
@@ -717,7 +752,13 @@ INDEX_HTML = """<!doctype html>
 <main>
   <section class="left">
     <div class="preview"><img id="stream" src="/stream" alt="camera"></div>
-    <div class="meta"><span id="cam">camera …</span><span id="mode">idle</span></div>
+    <div class="meta">
+      <span id="cam">camera …</span>
+      <label class="mirror" title="勾选=像照镜子；不勾=像别人看你（原始画面）">
+        <input type="checkbox" id="mirrorChk"> 自拍镜像
+      </label>
+      <span id="mode">idle</span>
+    </div>
     <div class="row">
       <span style="color:var(--muted);font-size:12px">点击画面设置手部中心</span>
       <span id="dataCount" style="color:var(--muted);font-size:12px"></span>
@@ -862,6 +903,7 @@ async function refresh() {
     $('cam').textContent = (s.camera && s.camera.width)
       ? ('camera ' + s.camera.width + 'x' + s.camera.height + ' @ ' + Math.round(s.camera.fps || 0) + ' fps')
       : 'camera 未连接';
+    $('mirrorChk').checked = !!s.mirror;
     $('mode').textContent = s.mode;
     $('dataCount').textContent = s.n_labels + ' 张样本';
     if (s.error) { $('err').textContent = s.error; $('err').style.display = 'block'; }
@@ -923,6 +965,7 @@ async function refresh() {
     $('stopRec').disabled = !s.guided;
     var busy = !!(s.job && s.job.running);
     $('bgBtn').disabled = busy || !!s.guided;
+    $('mirrorChk').disabled = busy || !!s.guided;
     $('trainBtn').disabled = busy;
     $('evalBtn').disabled = busy;
     $('applyNames').disabled = busy;
@@ -960,6 +1003,9 @@ async function pollLog() {
 }
 
 $('saveBtn').onclick = function() { api('/api/record/save', { cls: selected }).then(refresh).catch(showErr); };
+$('mirrorChk').onchange = function() {
+  api('/api/mirror', { on: this.checked }).then(refresh).catch(showErr);
+};
 $('startGuided').onclick = function() {
   api('/api/record/guided', {
     rounds: parseInt($('rounds').value || '4', 10),
@@ -1200,6 +1246,9 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/center":
             wb.set_center(float(d.get("x", FRAME_W / 2)), float(d.get("y", FRAME_H / 2)))
             self._json({"ok": True, "center": wb.center})
+        elif path == "/api/mirror":
+            wb.set_mirror(bool(d.get("on")))
+            self._json({"ok": True, "mirror": wb.mirror})
         elif path == "/api/record/save":
             self._json(wb.save_manual(int(d.get("cls", wb.selected_class))))
         elif path == "/api/record/guided":

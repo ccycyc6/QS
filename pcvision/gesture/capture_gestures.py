@@ -140,6 +140,8 @@ class Recorder:
         if not ok or frame is None:
             raise SystemExit("camera read failed")
         self.clean = letterbox(frame)
+        if self.args.mirror:
+            self.clean = cv2.flip(self.clean, 1)
         return self.clean
 
     def center_for(self, cls: int) -> tuple[int, int]:
@@ -341,6 +343,8 @@ def selftest(args, names: list[str]) -> int:
         if not ok or frame is None:
             raise SystemExit("camera read failed")
         img = letterbox(frame)
+        if args.mirror:
+            img = cv2.flip(img, 1)
         name = f"selftest_{i:02d}.jpg"
         cv2.imwrite(str(out / name), img, [cv2.IMWRITE_JPEG_QUALITY, args.quality])
         labels.append(Label(name, 0, -1, -1, "selftest"))
@@ -363,6 +367,8 @@ def main() -> int:
     ap.add_argument("--tracker", choices=["auto", "mediapipe", "fixed"], default="auto")
     ap.add_argument("--roi", type=int, default=440, help="guide box size in pixels")
     ap.add_argument("--quality", type=int, default=95)
+    ap.add_argument("--mirror", action="store_true", default=None,
+                    help="flip horizontally (defaults to data/settings.json)")
     ap.add_argument("--guided", action="store_true")
     ap.add_argument("--seconds", type=float, default=8.0)
     ap.add_argument("--save-fps", type=float, default=5.0)
@@ -370,6 +376,13 @@ def main() -> int:
     ap.add_argument("--selftest", type=int, default=0,
                     help="save N frames without GUI then exit (camera check)")
     args = ap.parse_args()
+
+    if args.mirror is None:
+        try:
+            args.mirror = bool(json.loads((data_dir() / "settings.json").read_text()).get("mirror", False))
+        except Exception:  # noqa: BLE001
+            args.mirror = False
+    print("mirror:", "on" if args.mirror else "off")
 
     names = parse_names(args.names) if args.names else load_classes()
     if args.names and (data_dir() / "classes.json").exists():

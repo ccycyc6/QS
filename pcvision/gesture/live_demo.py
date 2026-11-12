@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 import torch
 
-from common import FRAME_H, FRAME_W, GRID_H, GRID_W, load_classes, out_dir, parse_names
+from common import FRAME_H, FRAME_W, GRID_H, GRID_W, data_dir, load_classes, out_dir, parse_names
 from capture_gestures import open_camera
 from actions import ActionConfig, GestureActions, EventLog
 
@@ -42,7 +42,15 @@ def main() -> int:
                          "float threshold suggested by out/eval.json")
     ap.add_argument("--events", default=None, help="write action events as JSONL")
     ap.add_argument("--no-actions", action="store_true")
+    ap.add_argument("--mirror", action="store_true", default=None,
+                    help="flip horizontally (defaults to data/settings.json)")
     args = ap.parse_args()
+
+    if args.mirror is None:
+        try:
+            args.mirror = bool(json.loads((data_dir() / "settings.json").read_text()).get("mirror", False))
+        except Exception:  # noqa: BLE001
+            args.mirror = False
 
     names = parse_names(args.names) if args.names else load_classes()
     k = len(names)
@@ -85,6 +93,8 @@ def main() -> int:
             break
         if not pause:
             view = letterbox_bgr(frame)
+            if args.mirror:
+                view = cv2.flip(view, 1)
             rgb = cv2.cvtColor(view, cv2.COLOR_BGR2RGB)
             x = (rgb.astype(np.float32) - 128.0) / 128.0
             xb = torch.from_numpy(np.ascontiguousarray(x.transpose(2, 0, 1)))[None].to(device)

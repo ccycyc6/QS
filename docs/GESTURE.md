@@ -190,7 +190,17 @@ $QS_GESTURE_HOME/env/bin/python pcvision/gesture/capture_gestures.py --selftest 
 rm -rf $QS_GESTURE_HOME/out/selftest
 ```
 
-### 3.3 数据长什么样
+### 3.3 镜像（自拍 / 非镜像）
+
+工作台预览下方有 **“自拍镜像”** 复选框；CLI 对应 `--mirror`。
+
+- **不勾**：原始画面，文字正常，像别人看你（非镜像）；
+- **勾选**：左右翻转，像照镜子（自拍镜像）。
+
+勾选后 **预览和新录制的帧一起翻转**；已有数据方向不变。切换后建议重新录一轮，
+保持训练/推理方向一致。录制过程中不要切换。
+
+### 3.4 数据长什么样
 
 `data/raw/labels.csv`：
 
