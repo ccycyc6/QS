@@ -103,10 +103,18 @@ class Workbench:
         self.actions = None
         self.threshold = None
         self.events = deque(maxlen=40)
+        self.event_seq = 0
+        self.action_cfg = None
         self.last_det = None
         self.vote = deque(maxlen=7)
         self.stable = None
-        self.mirror = bool(load_settings().get("mirror", False))
+        _saved = load_settings()
+        self.mirror = bool(_saved.get("mirror", False))
+        self.action_cfg = {
+            "hold": float(_saved.get("action_hold", 0.8)),
+            "swipe": int(_saved.get("action_swipe", 6)),
+            "seq": float(_saved.get("action_seq", 1.2)),
+        }
         self.job = None
         self.logs = deque(maxlen=4000)
         self.log_seq = 0
@@ -278,10 +286,13 @@ class Workbench:
             conf = float(val[0, best].item())
             gx, gy = best % GRID_W, best // GRID_W
         show = cls > 0 and (threshold is None or conf >= threshold)
-        if acts is not None:
+        if acts is not None and (threshold is None or conf >= threshold):
             for ev in acts.update(cls, gx, gy, int(round(conf)), now):
+                d = ev.to_dict()
                 with self.lock:
-                    self.events.append(ev.to_dict())
+                    d["id"] = self.event_seq
+                    self.event_seq += 1
+                    self.events.append(d)
                     if len(self.events) > 40:
                         self.events.popleft()
 
@@ -398,6 +409,7 @@ class Workbench:
                 "selected": self.selected_class, "counts": dict(self.counts),
                 "n_labels": self.n_labels, "guided": g,
                 "monitor": self.mode == "monitor", "threshold": self.threshold,
+                "action_cfg": self.action_cfg,
                 "metrics": self.metrics, "train": self.train_meta, "job": job,
                 "checkpoint": (runs_dir() / "gesture.pt").exists(),
                 "mirror": self.mirror,
@@ -467,7 +479,7 @@ class Workbench:
             if self.mode == "guided":
                 self.mode = "idle"
 
-    def start_monitor(self, threshold) -> None:
+    def start_monitor(self, threshold, hold=None, swipe=None, seq=None) -> None:
         if torch is None:
             raise ApiError("torch 不可用: " + TORCH_ERROR)
         ckpt = runs_dir() / "gesture.pt"
@@ -493,16 +505,30 @@ class Workbench:
                 self.log("no clean eval threshold; monitor shows every gesture class")
             else:
                 self.log("using eval threshold " + str(threshold))
+
+        saved = load_settings()
+        hold = float(hold) if hold not in (None, "") else float(saved.get("action_hold", 0.8))
+        swipe = int(swipe) if swipe not in (None, "") else int(saved.get("action_swipe", 6))
+        seq = float(seq) if seq not in (None, "") else float(saved.get("action_seq", 1.2))
+        hold = max(0.2, min(5.0, hold))
+        swipe = max(2, min(30, swipe))
+        seq = max(0.2, min(5.0, seq))
+        cfg = ActionConfig(hold_seconds=hold, swipe_cells=swipe, sequence_window=seq)
+        save_settings({"action_hold": hold, "action_swipe": swipe, "action_seq": seq})
         with self.lock:
             self.monitor = (net, device)
-            self.actions = GestureActions(self.classes, ActionConfig())
+            self.actions = GestureActions(self.classes, cfg)
             self.threshold = None if threshold is None else float(threshold)
+            self.action_cfg = {"hold": hold, "swipe": swipe, "seq": seq}
             self.events.clear()
+            self.event_seq = 0
             self.vote.clear()
             self.stable = None
             self.mode = "monitor"
             self.guided = None
-        self.log("monitor on (" + device + ", threshold " + str(self.threshold) + ")")
+        self.log("monitor on (" + device + ", threshold " + str(self.threshold) +
+                 ", hold " + str(hold) + "s, swipe " + str(swipe) +
+                 " cells, seq " + str(seq) + "s)")
 
     def stop_monitor(self) -> None:
         with self.lock:
@@ -515,9 +541,9 @@ class Workbench:
                 self.mode = "idle"
                 self.log("monitor off")
 
-    def set_monitor(self, on: bool, threshold) -> None:
+    def set_monitor(self, on: bool, threshold, hold=None, swipe=None, seq=None) -> None:
         if on:
-            self.start_monitor(threshold)
+            self.start_monitor(threshold, hold, swipe, seq)
         else:
             self.stop_monitor()
 
@@ -825,11 +851,14 @@ INDEX_HTML = """<!doctype html>
       <h2>4 实时监测</h2>
       <div class="row">
         <label>阈值<input id="thresh" type="number" step="0.1" placeholder="自动"></label>
+        <label>按住 s<input id="hold" type="number" step="0.1" value="0.8"></label>
+        <label>滑动格<input id="swipe" type="number" value="6"></label>
+        <label>序列 s<input id="seq" type="number" step="0.1" value="1.2"></label>
         <button id="monitorBtn">开始监测</button>
       </div>
       <div id="det" class="status"></div>
       <div id="events" class="events"></div>
-      <div class="hint">监测使用 runs/gesture.pt；阈值留空表示不启用阈值（显示所有手势类）。</div>
+      <div class="hint">HOLD 需要按住时长；SWIPE 用格子位移；SEQUENCE 是两个手势在窗口内直接切换。阈值留空=不启用。</div>
     </div>
 
     <div class="card">
@@ -848,6 +877,7 @@ var logSeq = 0;
 var selected = 1;
 var lastClassKey = '';
 var namesInit = false;
+var cfgInit = false;
 var monitoring = false;
 
 function $(id) { return document.getElementById(id); }
@@ -904,6 +934,12 @@ async function refresh() {
       ? ('camera ' + s.camera.width + 'x' + s.camera.height + ' @ ' + Math.round(s.camera.fps || 0) + ' fps')
       : 'camera 未连接';
     $('mirrorChk').checked = !!s.mirror;
+    if (!cfgInit && s.action_cfg) {
+      $('hold').value = s.action_cfg.hold;
+      $('swipe').value = s.action_cfg.swipe;
+      $('seq').value = s.action_cfg.seq;
+      cfgInit = true;
+    }
     $('mode').textContent = s.mode;
     $('dataCount').textContent = s.n_labels + ' 张样本';
     if (s.error) { $('err').textContent = s.error; $('err').style.display = 'block'; }
@@ -1038,8 +1074,13 @@ $('trainBtn').onclick = function() {
 $('evalBtn').onclick = function() { api('/api/eval', {}).then(refresh).catch(showErr); };
 $('monitorBtn').onclick = function() {
   var t = $('thresh').value;
-  api('/api/monitor', { on: !monitoring, threshold: t === '' ? null : parseFloat(t) })
-    .then(refresh).catch(showErr);
+  api('/api/monitor', {
+    on: !monitoring,
+    threshold: t === '' ? null : parseFloat(t),
+    hold: parseFloat($('hold').value || '0.8'),
+    swipe: parseInt($('swipe').value || '6', 10),
+    seq: parseFloat($('seq').value || '1.2')
+  }).then(refresh).catch(showErr);
 };
 $('resetBtn').onclick = function() {
   if (!confirm('确定清空 data/、runs/、out/？venv、缓存和类别名会保留。')) return;
@@ -1094,6 +1135,9 @@ DEMO_HTML = """<!doctype html>
   .big.idle { color:#8b93a7; }
   .sub { margin-top:10px; font-size:clamp(16px, 1.6vw, 26px); color:#dfe6f5;
          text-shadow:0 2px 12px rgba(0,0,0,.9); }
+  .action { min-height:1.15em; margin-bottom:8px; font-size:clamp(22px, 3vw, 48px);
+            font-weight:800; color:#ffd166; letter-spacing:.02em;
+            text-shadow:0 2px 18px rgba(0,0,0,.9); }
   .bar { position:absolute; left:0; top:0; right:0; padding:14px 20px;
          display:flex; justify-content:space-between; align-items:center;
          background:linear-gradient(rgba(0,0,0,.65), rgba(0,0,0,0)); font-size:13px;
@@ -1120,18 +1164,22 @@ DEMO_HTML = """<!doctype html>
     <div class="bar"><span><span id="dot" class="dot off"></span><span id="mode">idle</span></span>
       <a href="/" target="_self">返回工作台</a></div>
     <div class="overlay">
+      <div id="action" class="action"></div>
       <div id="big" class="big idle">NO GESTURE</div>
       <div id="sub" class="sub">等待稳定检测…</div>
     </div>
   </div>
   <aside class="side">
     <h1>实时动作</h1>
-    <div class="hint">CNN 看单帧，7 帧多数投票后显示；“动作”由 HOLD/SWIPE 状态机产生。</div>
+    <div class="hint">CNN 看单帧，7 帧多数投票后显示；“动作”由 HOLD/SWIPE/SEQUENCE 状态机产生。</div>
+    <div id="cfg" class="hint"></div>
     <div id="events"></div>
   </aside>
 </div>
 <script>
 function $(id) { return document.getElementById(id); }
+var lastEventId = -1;
+var actionUntil = 0;
 async function poll() {
   try {
     var s = await (await fetch('/api/status')).json();
@@ -1158,6 +1206,20 @@ async function poll() {
         (e.direction ? (' · ' + e.direction) : '');
       box.appendChild(d);
     });
+    var ev = (s.events && s.events.length) ? s.events[s.events.length - 1] : null;
+    if (ev && ev.id !== lastEventId) {
+      lastEventId = ev.id;
+      var txt = String(ev.type || '').toUpperCase();
+      if (ev.gesture) txt += ' · ' + ev.gesture;
+      if (ev.direction) txt += ' · ' + ev.direction;
+      $('action').textContent = txt;
+      actionUntil = Date.now() + 1800;
+    }
+    if (Date.now() > actionUntil) $('action').textContent = '';
+    $('cfg').textContent = s.action_cfg
+      ? ('hold ' + s.action_cfg.hold + 's · swipe ' + s.action_cfg.swipe +
+         ' 格 · seq ' + s.action_cfg.seq + 's')
+      : '';
   } catch (e) {
     $('mode').textContent = '未连接';
   }
@@ -1265,7 +1327,8 @@ class Handler(BaseHTTPRequestHandler):
             wb.start_eval()
             self._json({"ok": True})
         elif path == "/api/monitor":
-            wb.set_monitor(bool(d.get("on")), d.get("threshold"))
+            wb.set_monitor(bool(d.get("on")), d.get("threshold"),
+                           d.get("hold"), d.get("swipe"), d.get("seq"))
             self._json({"ok": True})
         elif path == "/api/reset":
             if d.get("confirm") != "RESET":

@@ -80,7 +80,16 @@ def main() -> int:
     print(f"camera {w}x{h}, model {args.ckpt}, classes {names}")
     cv2.namedWindow("gesture live", cv2.WINDOW_AUTOSIZE)
 
-    actions = GestureActions(names, ActionConfig())
+    saved = {}
+    try:
+        saved = json.loads((data_dir() / "settings.json").read_text())
+    except Exception:  # noqa: BLE001
+        saved = {}
+    actions = GestureActions(names, ActionConfig(
+        hold_seconds=float(saved.get("action_hold", 0.8)),
+        swipe_cells=int(saved.get("action_swipe", 6)),
+        sequence_window=float(saved.get("action_seq", 1.2)),
+    ))
     log = EventLog(args.events) if args.events else None
     recent: list[str] = []
     fps = 0.0
@@ -113,7 +122,7 @@ def main() -> int:
             inst = 1.0 / max(1e-6, now - last_t)
             last_t = now
             fps = inst if fps == 0 else 0.9 * fps + 0.1 * inst
-            if not args.no_actions:
+            if not args.no_actions and (args.threshold is None or conf >= args.threshold):
                 for ev in actions.update(cls, gx, gy, int(round(conf)), now):
                     recent.append(ev.to_dict())
                     recent = recent[-4:]

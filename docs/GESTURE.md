@@ -298,6 +298,9 @@ $QS_GESTURE_HOME/env/bin/python pcvision/gesture/hw_emulate.py \
 
 - 本地：工作台 + /demo；显示前 7 帧多数投票，动作由 actions.py 的
   HOLD / SWIPE_L / SWIPE_R / SWIPE_U / SWIPE_D / SEQUENCE 产生；
+- 工作台第 4 栏可调：按住 s（默认 0.8）、滑动格（6）、序列 s（1.2）；
+  SEQUENCE = 两个**不同**手势在窗口内直接切换，冷却 1 s；
+- /demo 会在大标签上方用黄色横幅显示最新动作，右侧保留事件列表；
 - 展示动作只来自单帧手势 + 格子时序，**不用手机 IMU / MediaPipe / Pose**；
 - 板子迁移（效果满意后）：PC HDMI 720p60 → 板子 CNN → frame_argmax →
   OSD/UART；RV32 调度器做去抖/hold/swipe。当前阶段不碰板子/RV/HDMI；
@@ -317,12 +320,14 @@ bash pcvision/gesture/gesture.sh monitor
 - 实时显示类别、置信度、命中的格子与框；显示前做 **7 帧多数投票**（4/7 才稳定），减少闪烁；
 - 工作台的“采集背景 6 秒”会快速补 class 0 负样本，专门压实时误报；`/demo` 是展示用大屏页面；
 - `actions.py` 把逐帧结果变成 **hold / swipe_left / swipe_right / swipe_up /
-  swipe_down** 事件；按 `s` 存截图，`p` 暂停，`r` 清状态，`q` 退出；
+  swipe_down / sequence** 事件；按 `s` 存截图，`p` 暂停，`r` 清状态，`q` 退出；
 - `--events out/events.jsonl` 落盘事件；
 - `--threshold T` 可提高“报告手势”的门槛（板子端对应 frame_argmax 的阈值）。
 
 动作层参数在 `pcvision/gesture/actions.py` 的 `ActionConfig`：投票窗口 7 帧、
-锁定 5 票、按住 0.8 s、滑动 6 格（96 px）/0.35 s、冷却 0.7 s。单元测试：
+锁定 5 票、按住 0.8 s、滑动 6 格（96 px）/0.35 s、冷却 0.7 s、序列窗口 1.2 s /
+冷却 1 s。工作台的输入框会覆盖这些默认值。模型输出是原始 logit（可能为负），
+动作层默认不过滤分数；只有设置阈值时才按阈值过滤。单元测试：
 
 ```bash
 $QS_GESTURE_HOME/env/bin/python pcvision/gesture/test_actions.py

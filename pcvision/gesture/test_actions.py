@@ -53,6 +53,36 @@ def test_negative_ends_gesture():
     assert any(e.type == "gesture_end" for e in ev2), [e.to_dict() for e in ev2]
 
 
+def test_negative_confidence_still_acts():
+    # The CNN emits raw logits, often negative; the action layer must not
+    # silently drop them with a 0 confidence threshold.
+    g = GestureActions(NAMES, ActionConfig(window=5, min_votes=4, hold_seconds=0.2))
+    ev, _ = feed(g, 2, 40, 22, 14, 0.0, conf=-3)
+    kinds = [e.type for e in ev]
+    assert "gesture_start" in kinds and "hold" in kinds, kinds
+
+
+def test_sequence():
+    g = GestureActions(NAMES, ActionConfig(window=5, min_votes=4, hold_seconds=99,
+                                           sequence_window=2.0, sequence_cooldown=0.5))
+    ev, t = feed(g, 1, 40, 22, 8, 0.0)
+    ev2, _ = feed(g, 2, 40, 22, 8, t)
+    seq = [e for e in ev2 if e.type == "sequence"]
+    assert seq, [e.to_dict() for e in ev + ev2]
+    assert seq[0].source == "fist", seq[0]
+    assert seq[0].gesture == "fist -> open_palm", seq[0]
+
+
+def test_sequence_too_slow():
+    g = GestureActions(NAMES, ActionConfig(window=5, min_votes=4, hold_seconds=99,
+                                           sequence_window=0.5, sequence_cooldown=0.5))
+    ev, t = feed(g, 1, 40, 22, 8, 0.0)
+    ev_bg, t = feed(g, 0, 0, 0, 8, t, conf=0)      # drop to background first
+    ev2, _ = feed(g, 2, 40, 22, 8, t + 3.0)
+    assert not any(e.type == "sequence" for e in ev + ev_bg + ev2), \
+        [e.to_dict() for e in ev + ev_bg + ev2]
+
+
 def test_noise_does_not_lock():
     g = GestureActions(NAMES, ActionConfig(window=7, min_votes=6))
     ev = []
@@ -65,5 +95,8 @@ if __name__ == "__main__":
     test_hold()
     test_swipe_left()
     test_negative_ends_gesture()
+    test_negative_confidence_still_acts()
+    test_sequence()
+    test_sequence_too_slow()
     test_noise_does_not_lock()
     print("actions: all tests passed")

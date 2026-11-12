@@ -20,16 +20,18 @@ from dataclasses import dataclass, field
 class ActionConfig:
     window: int = 7                 # frames in the majority-vote window
     min_votes: int = 5              # votes needed to lock a gesture
-    conf_threshold: int = 0         # ignore detections below this score
+    conf_threshold: float = -1e9    # raw logits can be negative; only filter if set
     hold_seconds: float = 0.8       # "hold" event after this long
     swipe_cells: int = 6            # 6 cells = 96 px of travel
     swipe_seconds: float = 0.35     # travel window
     cooldown: float = 0.7           # minimum gap between swipes
+    sequence_window: float = 1.2    # A -> B must happen within this time
+    sequence_cooldown: float = 1.0  # minimum gap between sequences
 
 
 @dataclass
 class Event:
-    type: str                       # gesture_start | gesture_end | hold | swipe
+    type: str                       # gesture_start | gesture_end | hold | swipe | sequence
     gesture: str = ""
     cls: int = 0
     direction: str = ""
@@ -37,13 +39,16 @@ class Event:
     gx: int = 0
     gy: int = 0
     conf: int = 0
+    source: str = ""                # sequence: the previous gesture
 
     def to_dict(self) -> dict:
         d = {"type": self.type, "gesture": self.gesture, "cls": self.cls,
              "t": round(self.t, 3)}
         if self.direction:
             d["direction"] = self.direction
-        if self.type in ("gesture_start", "hold", "swipe"):
+        if self.source:
+            d["source"] = self.source
+        if self.type in ("gesture_start", "hold", "swipe", "sequence"):
             d.update(gx=self.gx, gy=self.gy, conf=self.conf)
         return d
 
@@ -58,6 +63,8 @@ class GestureActions:
         self.hold_sent = False
         self.pos_hist: deque[tuple[float, int, int]] = deque()
         self.last_swipe = {"left": -1e9, "right": -1e9, "up": -1e9, "down": -1e9}
+        self.last_lock: tuple[float, int] | None = None
+        self.last_sequence = -1e9
 
     def name(self, cls: int) -> str:
         return self.names[cls] if 0 <= cls < len(self.names) else str(cls)
@@ -67,6 +74,8 @@ class GestureActions:
         self.pos_hist.clear()
         self.locked = 0
         self.hold_sent = False
+        self.last_lock = None
+        self.last_sequence = -1e9
 
     def update(self, cls: int, gx: int, gy: int, conf: int,
                t: float | None = None) -> list[Event]:
@@ -86,6 +95,7 @@ class GestureActions:
 
         events: list[Event] = []
         if stable != self.locked:
+            prev = self.last_lock
             if self.locked:
                 events.append(Event("gesture_end", self.name(self.locked), self.locked, t=t))
             self.locked = stable
@@ -93,10 +103,25 @@ class GestureActions:
             self.hold_sent = False
             self.pos_hist.clear()
             if stable:
+                if (prev is not None and prev[1] != stable
+                        and 0 < t - prev[0] <= cfg.sequence_window
+                        and t - self.last_sequence >= cfg.sequence_cooldown):
+                    self.last_sequence = t
+                    events.append(Event(
+                        "sequence",
+                        self.name(prev[1]) + " -> " + self.name(stable),
+                        stable, t=t, gx=gx, gy=gy, conf=conf,
+                        source=self.name(prev[1]),
+                    ))
+                self.last_lock = (t, stable)
                 events.append(Event("gesture_start", self.name(stable), stable, t=t,
                                     gx=gx, gy=gy, conf=conf))
         if not self.locked:
             return events
+
+        # Keep the last-lock time fresh so a direct A -> B transition is
+        # measured from A's last frame, not from when A first appeared.
+        self.last_lock = (t, self.locked)
 
         self.pos_hist.append((t, gx, gy))
         while self.pos_hist and t - self.pos_hist[0][0] > cfg.swipe_seconds:
