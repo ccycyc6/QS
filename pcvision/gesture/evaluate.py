@@ -1,7 +1,7 @@
 """Evaluate a gesture checkpoint in float and bit-exact integer arithmetic.
 
 Float numbers say whether the network learned the task.  The bit-exact pass
-runs pcvision/hw_emulate.py on the exported .mat files and says whether the
+runs pcvision/gesture/hw_emulate.py on the exported .mat files and says whether the
 quantised model that goes to the board still does.  Both are reported together
 because a model can be accurate in float and collapse after quantisation.
 """
@@ -34,7 +34,6 @@ from common import (
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ml"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from model_template import MundusDet  # noqa: E402
 from hw_emulate import HWModel, detect  # noqa: E402
 

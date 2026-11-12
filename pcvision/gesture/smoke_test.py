@@ -115,7 +115,7 @@ def main() -> int:
             "--classes", len(CLASSES), "--calib-dir", raw, "--calib-count", 6]).returncode != 0:
         raise SystemExit("export failed")
 
-    r = run([py, repo / "pcvision/hw_emulate.py", "--mat", mats, "--verify"])
+    r = run([py, repo / "pcvision/gesture/hw_emulate.py", "--mat", mats, "--verify"])
     if r.returncode != 0:
         raise SystemExit("bit-exact verification failed")
 
@@ -146,7 +146,7 @@ def main() -> int:
 
     print("\nSMOKE OK - full PC chain works (synthetic data).")
     print("note: 4 epochs validates wiring only; accuracy is not a quality claim.")
-    print("next: record real gestures with  bash pcvision/gesture/record.sh")
+    print("next: record real gestures with  bash pcvision/gesture/gesture.sh record")
     return 0
 
 

@@ -3,18 +3,33 @@
 本文件描述在本机 Ubuntu 上，用本机摄像头采集手势、训练、量化、位精确验证，
 最后再在 Windows 上打包上板的完整流程。
 
-核心原则：**先在本机把算法和量化跑对，再上板**。`pcvision/hw_emulate.py`
+核心原则：**先在本机把算法和量化跑对，再上板**。`pcvision/gesture/hw_emulate.py`
 按 RTL 的整数语义实现（算术右移 + 舍入 + 饱和/ReLU + 全帧 argmax），
 所以 PC 上看到的量化结果与板端一致；它仍建议在上板后用真实画面复核一次。
 
----
+## 0. 统一入口
 
-## 0. 最短路径（推荐工作台）
+日常只用 **pcvision/gesture/gesture.sh**；其他 .sh/.py 是内部实现。
+
+| 命令 | 作用 |
+|---|---|
+| gesture.sh setup | 建隔离 venv + 依赖 |
+| gesture.sh doctor | 环境 / CUDA / 摄像头自检 |
+| gesture.sh app | 网页工作台 + 演示页 |
+| gesture.sh record | 引导式/手动采集 |
+| gesture.sh train | 训练 |
+| gesture.sh export / eval | 量化导出 / float+位精确评估 |
+| gesture.sh all | train → export → eval → pack |
+| gesture.sh monitor | 命令行实时监测 |
+| gesture.sh status / manifest / clean | 状态 / 清单 / 清理 |
+| gesture.sh smoke | 合成数据自检 |
+
+### 最短路径（推荐工作台）
 
 ```bash
 cd /home/ccy/Documents/qs/QS
-bash pcvision/gesture/app.sh
-# 浏览器打开 http://127.0.0.1:8765
+bash pcvision/gesture/gesture.sh app
+# 工作台 http://127.0.0.1:8765 ／ 演示页 http://127.0.0.1:8765/demo
 ```
 
 一个网页里完成：摄像头预览 → 采集 → 训练 → 量化+评估 → 实时监测，
@@ -34,10 +49,10 @@ bash pcvision/gesture/app.sh
 > 不想开网页时：
 >
 > ```bash
-> bash pcvision/gesture/doctor.sh
-> bash pcvision/gesture/record.sh --rounds 4 --names fist,open_palm,point
-> bash pcvision/gesture/run_pipeline.sh all
-> bash pcvision/gesture/monitor.sh
+> bash pcvision/gesture/gesture.sh doctor
+> bash pcvision/gesture/gesture.sh record --rounds 4 --names fist,open_palm,point
+> bash pcvision/gesture/gesture.sh all
+> bash pcvision/gesture/gesture.sh monitor
 > ```
 
 ---
@@ -54,8 +69,8 @@ bash pcvision/gesture/app.sh
 （头部层固定 16 通道，`pack_model.py` 会自动补齐到 16）。
 
 > 手机 IMU + MediaPipe 的 5 个游戏动作（攻击/治疗/举盾/弹反/闪避）是**另一条线**，
-> 对应 `pc/host`，评估见 [ACTION_CONTROLLER.md](ACTION_CONTROLLER.md)；
-> 它不使用本页的手势 CNN，也不能直接跑在 FPGA 上。
+> 对应 pc/host；它不使用本页的手势 CNN，也不能直接跑在 FPGA 上。
+> 本平台不读取、不修改线 A。
 
 ### 和旧车牌内容的关系
 
@@ -90,8 +105,8 @@ bash pcvision/gesture/app.sh
 
 ```bash
 cd /home/ccy/Documents/qs/QS
-bash pcvision/gesture/setup_env.sh          # CUDA 版（本机 RTX 4060）
-bash pcvision/gesture/doctor.sh             # 包 / CUDA / 摄像头 / 显示 自检
+bash pcvision/gesture/gesture.sh setup          # CUDA 版（本机 RTX 4060）
+bash pcvision/gesture/gesture.sh doctor             # 包 / CUDA / 摄像头 / 显示 自检
 ```
 
 没有 NVIDIA 显卡时用 `--cpu`。安装脚本会把重定向的缓存目录、venv、
@@ -100,10 +115,10 @@ pip 包清单都记进工作区清单。
 ### 查看清单 / 清理
 
 ```bash
-bash pcvision/gesture/manifest.sh           # 刷新 MANIFEST.md（含体积与包清单）
-bash pcvision/gesture/cleanup.sh            # 只预览，不删除
-bash pcvision/gesture/cleanup.sh --yes      # 删除整个工作区
-bash pcvision/gesture/cleanup.sh --yes --keep-data   # 只删环境，保留数据
+bash pcvision/gesture/gesture.sh manifest           # 刷新 MANIFEST.md（含体积与包清单）
+bash pcvision/gesture/gesture.sh clean            # 只预览，不删除
+bash pcvision/gesture/gesture.sh clean --yes      # 删除整个工作区
+bash pcvision/gesture/gesture.sh clean --yes --keep-data   # 只删环境，保留数据
 ```
 
 清理脚本只动 `$QS_GESTURE_HOME`，并拒绝删除仓库内路径。系统层面**没有**
@@ -118,7 +133,7 @@ bash pcvision/gesture/cleanup.sh --yes --keep-data   # 只删环境，保留数�
 先改类别名（默认 6 个：fist / open_palm / point / victory / thumbs_up / ok）：
 
 ```bash
-bash pcvision/gesture/record.sh --names fist,open_palm,point,victory
+bash pcvision/gesture/gesture.sh record --names fist,open_palm,point,victory
 ```
 
 第一次运行会把类别写进 `data/classes.json`；之后不要再改，否则标签对不上。
@@ -126,7 +141,7 @@ bash pcvision/gesture/record.sh --names fist,open_palm,point,victory
 ### 3.2 引导式录制（推荐）
 
 ```bash
-bash pcvision/gesture/record.sh --rounds 4
+bash pcvision/gesture/gesture.sh record --rounds 4
 ```
 
 流程：每个类别按一次 **Space** → 3 秒倒计时 → 自动录 `--seconds` 秒
@@ -158,13 +173,13 @@ bash pcvision/gesture/record.sh --rounds 4
 > 不装 mediapipe 时标签中心=画面中心/点击位置；训练用高斯软标签
 > （σ=2 格，约 32 px）并对平移做增强，所以手小幅漂移不会毁掉标签。
 >
-> 想让标签自动跟手，可另装（会带 opencv-contrib，装完重跑 `doctor.sh`）：
+> 想让标签自动跟手，可另装（会带 opencv-contrib，装完重跑 `gesture.sh doctor`）：
 >
 > ```bash
 > $QS_GESTURE_HOME/env/bin/pip install "mediapipe==0.10.35"
 > ```
 >
-> 然后 `record.sh --tracker mediapipe`；检测不到手的帧会自动跳过。
+> 然后 `gesture.sh record --tracker mediapipe`；检测不到手的帧会自动跳过。
 
 先确认摄像头通路（不录手势、不弹窗，只存 3 张背景图）：
 
@@ -190,9 +205,9 @@ rm -rf $QS_GESTURE_HOME/out/selftest
 ## 4. 训练
 
 ```bash
-bash pcvision/gesture/run_pipeline.sh train
+bash pcvision/gesture/gesture.sh train
 # 或自定义：
-bash pcvision/gesture/run_pipeline.sh train --epochs 80 --batch 4 --lr 3e-4
+bash pcvision/gesture/gesture.sh train --epochs 80 --batch 4 --lr 3e-4
 ```
 
 - 网络：`ml/model_template.py` 的 **MundusDet**（conv/ReLU/maxpool，无 BN，
@@ -215,8 +230,8 @@ bash pcvision/gesture/run_pipeline.sh train --epochs 80 --batch 4 --lr 3e-4
 ## 5. 量化 + 位精确评估（这一步不能跳）
 
 ```bash
-bash pcvision/gesture/run_pipeline.sh export   # 用真实帧做量化校准
-bash pcvision/gesture/run_pipeline.sh eval     # float + 位精确对比
+bash pcvision/gesture/gesture.sh export   # 用真实帧做量化校准
+bash pcvision/gesture/gesture.sh eval     # float + 位精确对比
 ```
 
 - `export` 会用 `data/raw` 里按类别均衡抽样 8 张做校准，逐层选幂次移位
@@ -254,7 +269,7 @@ bash pcvision/gesture/run_pipeline.sh eval     # float + 位精确对比
 - 阈值写进 `out/eval.json` 的 `threshold` 字段（可能为 `null`）；
   `live_demo.py` / 工作台只在 `clean_separation=true` 时自动采用；
   板端对应 `frame_argmax` 的 `CONF_THRESH`（或 RV/PC 后处理）；
-- 强制指定：`bash pcvision/gesture/run_pipeline.sh eval --thresh 50`。
+- 强制指定：`bash pcvision/gesture/gesture.sh eval --thresh 50`。
 
 结果：`out/eval.json`、`out/eval.csv`（逐帧 float/int 对照）。
 
@@ -262,19 +277,28 @@ bash pcvision/gesture/run_pipeline.sh eval     # float + 位精确对比
 （这是导出器 ↔ 模拟器的自洽性检查，不是跑 RTL 仿真）：
 
 ```bash
-$QS_GESTURE_HOME/env/bin/python pcvision/hw_emulate.py \
+$QS_GESTURE_HOME/env/bin/python pcvision/gesture/hw_emulate.py \
     --mat $QS_GESTURE_HOME/out/mats --verify
 # 期望最后一行：ALL MATCH
 ```
 
 ---
 
+## 5.5 线 B 展示语义（PC 本地 → 板子）
+
+- 本地：工作台 + /demo；显示前 7 帧多数投票，动作由 actions.py 的
+  HOLD / SWIPE_L / SWIPE_R / SWIPE_U / SWIPE_D / SEQUENCE 产生；
+- 展示动作只来自单帧手势 + 格子时序，**不用手机 IMU / MediaPipe / Pose**；
+- 板子迁移（效果满意后）：PC HDMI 720p60 → 板子 CNN → frame_argmax →
+  OSD/UART；RV32 调度器做去抖/hold/swipe。当前阶段不碰板子/RV/HDMI；
+- 不接游戏/手柄；表里的 5 个游戏动作属于线 A，不是本平台验收项。
+
 ## 6. 实时监测（训练完成后）
 
 工作台第 4 栏直接点“开始监测”即可。命令行方式：
 
 ```bash
-bash pcvision/gesture/monitor.sh
+bash pcvision/gesture/gesture.sh monitor
 # 等价于：
 # $QS_GESTURE_HOME/env/bin/python pcvision/gesture/live_demo.py \
 #     --ckpt $QS_GESTURE_HOME/runs/gesture.pt
@@ -301,7 +325,7 @@ $QS_GESTURE_HOME/env/bin/python pcvision/gesture/test_actions.py
 ### 7.1 在 PC 上打包
 
 ```bash
-bash pcvision/gesture/run_pipeline.sh pack
+bash pcvision/gesture/gesture.sh pack
 ```
 
 产物在 `$QS_GESTURE_HOME/out/hw/`：
@@ -343,7 +367,7 @@ PC 摄像头 ≠ 板子 HDMI 输入（曝光、白平衡、镜头、噪声都不
 上板后录 100–200 帧板子输入画面，加入数据集做一次**微调**：
 
 ```bash
-bash pcvision/gesture/run_pipeline.sh train --data $QS_GESTURE_HOME/data/board --epochs 20
+bash pcvision/gesture/gesture.sh train --data $QS_GESTURE_HOME/data/board --epochs 20
 ```
 
 （把板子采集帧和 labels.csv 放到 `data/board`；类别顺序必须与
@@ -362,7 +386,7 @@ bash pcvision/gesture/run_pipeline.sh train --data $QS_GESTURE_HOME/data/board -
 ## 8. 冒烟测试（不碰真实数据）
 
 ```bash
-bash pcvision/gesture/run_pipeline.sh smoke
+bash pcvision/gesture/gesture.sh smoke
 ```
 
 自动生成合成数据 → 训练 4 epoch → 量化校准 → 逐位校验 → float/int 评估
@@ -377,7 +401,7 @@ bash pcvision/gesture/run_pipeline.sh smoke
 
 | 现象 | 先查 |
 |---|---|
-| 打不开摄像头 | 是否被浏览器/会议软件占用；`ls -l /dev/video*`；`doctor.sh` |
+| 打不开摄像头 | 是否被浏览器/会议软件占用；`ls -l /dev/video*`；`gesture.sh doctor` |
 | 画面全黑 / 绿 | 换 `--camera 1`；确认不是 IR 摄像头；`--width/--height` 换原生分辨率 |
 | 训练 loss 不降 | 类别是否只录了背景；`labels.csv` 的 cls 是否 1..K-1；学习率降到 1e-4 |
 | 验证准确率高、实拍差 | 数据太少/太单一；补录不同背景、距离、光照；检查 session 切分 |
@@ -385,37 +409,24 @@ bash pcvision/gesture/run_pipeline.sh smoke
 | 所有帧都判背景 | 先看 `eval.json` 的 `bit_exact`：若 int 远低于 float，用默认 `--bias-mode corrected` 重导；若两者都低，补正样本/背景 |
 | 实时有类别但没框 | 阈值被设成 0 且 logit 为负；把阈值留空（`null`），或看“最近检测”里的 conf |
 | 实时一直判某个手势 | 该类样本过多/背景太少；补 2–3 轮背景和不同角度，别只录同一姿势 |
-| 上板无框/全错 | 先跑 `hw_emulate --verify`；确认输入真是 720p60；再查域差异 |
-| 训练很慢 | 确认 `doctor.sh` 里 CUDA available=True；`--workers 4`；batch 提到 8 |
+| 上板无框/全错 | 先跑 `python pcvision/gesture/hw_emulate.py --mat <mats> --verify`；确认输入真是 720p60；再查域差异 |
+| 训练很慢 | 确认 `gesture.sh doctor` 里 CUDA available=True；`--workers 4`；batch 提到 8 |
 
 ---
 
 ## 10. 文件一览
 
     pcvision/gesture/
-    ├── app.sh               启动网页工作台
-    ├── webapp.py            工作台服务端 + 单页 UI
-    ├── env.sh               环境变量（工作区、缓存重定向）
-    ├── setup_env.sh         建 venv、装 torch/opencv
-    ├── doctor.sh            环境 + 摄像头自检
-    ├── manifest.sh          生成安装清单
-    ├── cleanup.sh           一键清理工作区
-    ├── record.sh            引导式/自由式采集入口
-    ├── capture_gestures.py  摄像头 + 标签 + 保存
-    ├── common.py            几何/标签/指标等共享代码
-    ├── dataset.py           Dataset + 增广
-    ├── train_gestures.py    训练（focal + 整帧 CE）
-    ├── evaluate.py          float / 位精确评估
-    ├── live_demo.py         实时演示 + 动作事件
-    ├── actions.py           时序动作层（hold/swipe）
-    ├── test_actions.py      动作层单测
-    ├── smoke_test.py        合成数据全链路冒烟
-    ├── monitor.sh           实时监测入口（调用 live_demo）
-    └── run_pipeline.sh      train / export / eval / pack / all
-
-```bash
-bash pcvision/gesture/monitor.sh        # 实时监测
-```
+    ├── gesture.sh           唯一入口（setup/doctor/app/record/train/eval/...）
+    ├── README.md            快速参考
+    ├── app.sh / webapp.py   网页工作台 + /demo
+    ├── capture_gestures.py  摄像头采集与标签
+    ├── common.py / dataset.py
+    ├── train_gestures.py / evaluate.py / hw_emulate.py
+    ├── actions.py / live_demo.py
+    ├── smoke_test.py / test_actions.py
+    └── setup_env.sh / doctor.sh / manifest.sh / cleanup.sh / record.sh /
+        run_pipeline.sh / monitor.sh    内部实现（由 gesture.sh 调用）
 
 ---
 
@@ -433,7 +444,7 @@ bash pcvision/gesture/monitor.sh        # 实时监测
 
 步骤建议：
 
-1. 先用手势模型跑通 `monitor.sh`（PC 侧完全不碰 RTL）；
+1. 先用手势模型跑通 `gesture.sh monitor`（PC 侧完全不碰 RTL）；
 2. 在 Windows 工程里注释/删除 LPRNet 例化与约束，只保留 11 层视觉骨架 + 输出；
 3. 覆盖手势 `.vh/.mem`，重跑 PDS，出 **gesture-only** 位流；
 4. 重新测资源/时序（删掉 LPRNet 后 LUT/DRAM 会更宽松，但要以 PDS 报告为准）。
