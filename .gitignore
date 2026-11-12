@@ -31,3 +31,9 @@ fpga/prj_pds/build_rv.pds
 fpga/prj_pds/impl.tcl
 # firmware build output
 fpga/rtl_rv/fw/out/
+# PDS generated in cam / smoke builds
+cam/fpga/pango/*.pds
+cam/fpga/pango/impl.tcl
+tools/smoke/*.pds
+tools/smoke/impl.tcl
+ml/__pycache__/
