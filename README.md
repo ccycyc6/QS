@@ -96,6 +96,7 @@ bash doctor.sh         # 逐项自检：包、CUDA、摄像头、权限、图形
 bash pcvision/gesture/setup_env.sh              # 一次性：venv + torch/cu124
 bash pcvision/gesture/doctor.sh                 # 摄像头/CUDA 自检
 bash pcvision/gesture/app.sh                    # 网页工作台（推荐）
+# 工作台 http://127.0.0.1:8765 ／ 展示页 http://127.0.0.1:8765/demo
 bash pcvision/gesture/record.sh --rounds 4      # 引导式采集（每类按一次空格）
 bash pcvision/gesture/run_pipeline.sh all       # 训练→量化→位精确评估→打包
 bash pcvision/gesture/manifest.sh               # 安装清单（体积）

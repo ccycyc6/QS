@@ -19,7 +19,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections import deque
+from collections import Counter, deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -103,6 +103,8 @@ class Workbench:
         self.threshold = None
         self.events = deque(maxlen=40)
         self.last_det = None
+        self.vote = deque(maxlen=7)
+        self.stable = None
         self.job = None
         self.logs = deque(maxlen=4000)
         self.log_seq = 0
@@ -278,7 +280,30 @@ class Workbench:
                     self.events.append(ev.to_dict())
                     if len(self.events) > 40:
                         self.events.popleft()
-        det = {"cls": cls, "gx": gx, "gy": gy, "conf": conf, "show": show}
+
+        # Majority vote over the last 7 frames keeps the demo from flickering.
+        with self.lock:
+            self.vote.append((cls, gx, gy, conf))
+            votes = [v for v in self.vote if v[0] > 0]
+            counts = Counter(v[0] for v in votes)
+            stable = None
+            if counts:
+                c, n = counts.most_common(1)[0]
+                need = max(4, len(self.vote) // 2 + 1)
+                if n >= need:
+                    pts = [v for v in votes if v[0] == c]
+                    sgx = int(np.median([p[1] for p in pts]))
+                    sgy = int(np.median([p[2] for p in pts]))
+                    scf = float(np.mean([p[3] for p in pts]))
+                    if threshold is None or scf >= threshold:
+                        stable = {"cls": c, "gx": sgx, "gy": sgy, "conf": scf,
+                                  "votes": n, "window": len(self.vote)}
+                    if stable is None:
+                        show = False
+            self.stable = stable
+            show = stable is not None
+        det = {"cls": cls, "gx": gx, "gy": gy, "conf": conf, "show": show,
+               "stable": stable}
         with self.lock:
             self.last_det = det
         return det
@@ -314,14 +339,18 @@ class Workbench:
                         "  rec " + str(g["saved"]) + "  left " + str(round(left, 1)) + "s"
         cv2.putText(img, title, (14, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
         if det is not None:
-            if det["show"]:
-                cx, cy = det["gx"] * 16 + 8, det["gy"] * 16 + 8
+            stable = det.get("stable")
+            if stable:
+                cx, cy = stable["gx"] * 16 + 8, stable["gy"] * 16 + 8
                 x0, y0 = max(0, cx - 32), max(0, cy - 20)
                 cv2.rectangle(img, (x0, y0), (min(FRAME_W - 1, x0 + 64), min(FRAME_H - 1, y0 + 40)),
                               (0, 255, 0), 2)
-                cv2.putText(img, safe_name(classes[det["cls"]], det["cls"]) + " " +
-                            str(round(det["conf"], 1)),
+                label = safe_name(classes[stable["cls"]], stable["cls"])
+                cv2.putText(img, label + " " + str(round(stable["conf"], 1)) +
+                            "  " + str(stable["votes"]) + "/" + str(stable["window"]),
                             (x0, max(18, y0 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                cv2.putText(img, "STABLE " + label, (14, 62), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.6, (0, 255, 0), 2)
             else:
                 cv2.putText(img, "no gesture", (14, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                             (180, 180, 180), 1)
@@ -368,6 +397,7 @@ class Workbench:
                 "metrics": self.metrics, "train": self.train_meta, "job": job,
                 "checkpoint": (runs_dir() / "gesture.pt").exists(),
                 "last_det": self.last_det,
+                "stable": self.stable,
                 "events": list(self.events)[-8:],
             }
 
@@ -457,6 +487,8 @@ class Workbench:
             self.actions = GestureActions(self.classes, ActionConfig())
             self.threshold = None if threshold is None else float(threshold)
             self.events.clear()
+            self.vote.clear()
+            self.stable = None
             self.mode = "monitor"
             self.guided = None
         self.log("monitor on (" + device + ", threshold " + str(self.threshold) + ")")
@@ -466,6 +498,8 @@ class Workbench:
             was = self.mode == "monitor"
             self.monitor = None
             self.actions = None
+            self.vote.clear()
+            self.stable = None
             if was:
                 self.mode = "idle"
                 self.log("monitor off")
@@ -674,7 +708,10 @@ INDEX_HTML = """<!doctype html>
 <body>
 <header>
   <h1>ScreenSense 手势工作台</h1>
-  <span id="conn">连接中…</span>
+  <div style="display:flex;gap:14px;align-items:center">
+    <a href="/demo" target="_blank" style="color:#9fd9ff;text-decoration:none;font-size:12px">演示页 ↗</a>
+    <span id="conn">连接中…</span>
+  </div>
 </header>
 <div id="err" class="err"></div>
 <main>
@@ -716,6 +753,10 @@ INDEX_HTML = """<!doctype html>
       <div class="row">
         <button id="startGuided">开始引导录制</button>
         <button id="stopRec" class="ghost">停止</button>
+      </div>
+      <div class="row">
+        <button id="bgBtn" class="ghost">采集背景 6 秒</button>
+        <span class="hint">约 30 张 class 0，点几次换姿势/位置</span>
       </div>
       <div id="guided" class="status"></div>
       <div class="hint">每类开始时按提示做动作；背景轮请空手/空场景。每轮独立 session。</div>
@@ -881,6 +922,7 @@ async function refresh() {
     $('startGuided').disabled = !!s.guided;
     $('stopRec').disabled = !s.guided;
     var busy = !!(s.job && s.job.running);
+    $('bgBtn').disabled = busy || !!s.guided;
     $('trainBtn').disabled = busy;
     $('evalBtn').disabled = busy;
     $('applyNames').disabled = busy;
@@ -926,6 +968,19 @@ $('startGuided').onclick = function() {
   }).then(refresh).catch(showErr);
 };
 $('stopRec').onclick = function() { api('/api/record/stop', {}).then(refresh).catch(showErr); };
+function sleep(ms) { return new Promise(function(resolve) { setTimeout(resolve, ms); }); }
+$('bgBtn').onclick = async function() {
+  if (!confirm('接下来 6 秒请不要做手势：空场景，或手自然放着。')) return;
+  $('bgBtn').disabled = true;
+  if (monitoring) { try { await api('/api/monitor', { on: false }); } catch (e) {} }
+  for (var i = 0; i < 30; i++) {
+    try { await api('/api/record/save', { cls: 0 }); }
+    catch (e) { showErr(e); break; }
+    await sleep(200);
+  }
+  $('bgBtn').disabled = false;
+  refresh();
+};
 $('trainBtn').onclick = function() {
   api('/api/train', {
     epochs: parseInt($('epochs').value || '60', 10),
@@ -973,6 +1028,102 @@ pollLog();
 """
 
 
+DEMO_HTML = """<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ScreenSense 手势演示</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:#07090d; color:#eef2ff;
+               font-family: system-ui, "Noto Sans CJK SC", sans-serif; }
+  .wrap { display:grid; grid-template-columns:minmax(0,1fr) 360px; height:100vh; }
+  .stage { position:relative; background:#000; overflow:hidden;
+           display:flex; align-items:center; justify-content:center; }
+  .stage img { width:100%; height:100%; object-fit:contain; }
+  .overlay { position:absolute; left:4vw; bottom:5vh; right:4vw; pointer-events:none; }
+  .big { font-size:clamp(44px, 7vw, 110px); font-weight:800; line-height:1;
+         color:#39d98a; text-shadow:0 2px 24px rgba(0,0,0,.8); letter-spacing:.02em; }
+  .big.idle { color:#8b93a7; }
+  .sub { margin-top:10px; font-size:clamp(16px, 1.6vw, 26px); color:#dfe6f5;
+         text-shadow:0 2px 12px rgba(0,0,0,.9); }
+  .bar { position:absolute; left:0; top:0; right:0; padding:14px 20px;
+         display:flex; justify-content:space-between; align-items:center;
+         background:linear-gradient(rgba(0,0,0,.65), rgba(0,0,0,0)); font-size:13px;
+         color:#cfd7e8; }
+  .bar a { color:#9fd9ff; text-decoration:none; }
+  .side { background:#0e1117; border-left:1px solid #232a36; padding:18px;
+          overflow:auto; }
+  .side h1 { font-size:16px; margin:0 0 10px; }
+  .side .hint { color:#8b93a7; font-size:12px; line-height:1.5; }
+  .ev { border:1px solid #232a36; border-radius:8px; padding:8px 10px;
+        margin:8px 0; background:#11151c; font-size:13px; }
+  .ev b { color:#ffd166; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+         background:#39d98a; margin-right:6px; }
+  .dot.off { background:#5c6373; }
+  @media (max-width: 900px) { .wrap { grid-template-columns:1fr; }
+    .side { border-left:0; border-top:1px solid #232a36; max-height:40vh; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <img id="stream" src="/stream" alt="camera">
+    <div class="bar"><span><span id="dot" class="dot off"></span><span id="mode">idle</span></span>
+      <a href="/" target="_self">返回工作台</a></div>
+    <div class="overlay">
+      <div id="big" class="big idle">NO GESTURE</div>
+      <div id="sub" class="sub">等待稳定检测…</div>
+    </div>
+  </div>
+  <aside class="side">
+    <h1>实时动作</h1>
+    <div class="hint">CNN 看单帧，7 帧多数投票后显示；“动作”由 HOLD/SWIPE 状态机产生。</div>
+    <div id="events"></div>
+  </aside>
+</div>
+<script>
+function $(id) { return document.getElementById(id); }
+async function poll() {
+  try {
+    var s = await (await fetch('/api/status')).json();
+    var st = s.stable;
+    $('mode').textContent = s.mode + (s.monitor ? '' : ' · 未监测');
+    $('dot').className = 'dot' + (st ? '' : ' off');
+    if (st) {
+      $('big').textContent = s.classes[st.cls] || ('class ' + st.cls);
+      $('big').className = 'big';
+      $('sub').textContent = 'conf ' + Number(st.conf).toFixed(2) +
+        ' · ' + st.votes + '/' + st.window + ' 帧一致 · cell (' + st.gx + ',' + st.gy + ')';
+    } else {
+      $('big').textContent = 'NO GESTURE';
+      $('big').className = 'big idle';
+      $('sub').textContent = s.monitor ? '等待稳定检测…' : '点工作台“开始监测”';
+    }
+    var box = $('events');
+    box.textContent = '';
+    (s.events || []).slice().reverse().forEach(function(e) {
+      var d = document.createElement('div');
+      d.className = 'ev';
+      d.innerHTML = '<b>' + (e.type || '') + '</b>' +
+        (e.gesture ? (' · ' + e.gesture) : '') +
+        (e.direction ? (' · ' + e.direction) : '');
+      box.appendChild(d);
+    });
+  } catch (e) {
+    $('mode').textContent = '未连接';
+  }
+  setTimeout(poll, 350);
+}
+poll();
+</script>
+</body>
+</html>
+"""
+
+
 class Handler(BaseHTTPRequestHandler):
     wb: Workbench = None
 
@@ -1004,7 +1155,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
-        if path in ("/", "/index.html"):
+        if path in ("/demo", "/demo.html"):
+            self._send(200, DEMO_HTML.encode("utf-8"), "text/html; charset=utf-8")
+        elif path in ("/", "/index.html"):
             html = INDEX_HTML
             qs = parse_qs(urlparse(self.path).query)
             if qs.get("nostream"):
