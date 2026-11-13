@@ -8,6 +8,8 @@
 
 - **线 A（控制）** 加速度计/手机 → FPGA/PC → 虚拟手柄 → 游戏（另一条线，本文不涉及）。
 - **线 B（展示）** 摄像头/PC 画面 720p60 → FPGA CNN → OSD/UART → 实时 UI。
+- **动作层（线 B 内）** 单帧手势 → HOLD / SWIPE / SEQUENCE，PC 上先跑，
+  以后由 RV 调度器接；不依赖手机 IMU。
 
 目标形态：盘古 200Pro+（PG2L200H）上，线 B 用 11 层 CNN + 自研 RISC-V 核
 （Mundus，8 级流水）做帧级调度，展示 CNN + CPU + OSD 的协同。
@@ -54,6 +56,23 @@
 
 ---
 
+## 当前状态（PC 本地，2026-11-12）
+
+| 项 | 当前值 |
+|---|---|
+| 数据 | 7 类 / 370 帧（background、fist、open_palm、point、victory、thumbs_up、ok） |
+| 切分 | 1 个完整轮次 + 部分轮次；当前验证是分层抽样，**89% 偏乐观** |
+| 模型 | float **89.04%** / 位精确 **89.04%** / 一致率 **100%** |
+| 阈值 | none（没有干净分界，不启用） |
+| 动作 | HOLD / SWIPE_L/R/U/D / SEQUENCE 已接入 /demo，参数可调 |
+| 板子 | 未动；RV/HDMI/PDS 仍暂停 |
+
+下一步：补 2–3 个完整手势轮次 + 3–4 次背景采集，重训后看**新 session**的
+准确率和实时误报；动作层先做语义映射/调参。详见
+[docs/GESTURE.md](docs/GESTURE.md) 的当前状态与动作层章节。
+
+---
+
 ## 目录
 
     ScreenSense/
@@ -75,8 +94,9 @@
 | 网络 | 11 层 conv/ReLU/maxpool，输出 80×45 |
 | 推理延迟 | 1.14 ms @148.5 MHz |
 | 工具链 | PDS 2025.2-SP3 |
-| 当前资源 | LUT 54.35%、DRM 58%、APM 38%（视觉 + RV + 串口） |
-| 位流 | bitstreams/cam_yolo.sbit（视觉基线） |
+| 历史资源 | LUT 54.35%、DRM 58%、APM 38%（含 RV 的旧位流；当前分支未带 RV RTL） |
+| 位流 | bitstreams/cam_yolo.sbit（历史视觉基线，含车牌；手势位流未生成） |
+| 当前阶段 | **PC 本地**：手势训练 + 动作层；板子/RV 未动 |
 
 ---
 

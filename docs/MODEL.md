@@ -87,6 +87,11 @@ label[y][x][k] = 0   否则
 | `input` | (1, Cin, H, W) | 训练集里的一张参考输入（用于生成仿真激励） |
 | `output` | (1, Cout, H, W) | 对应的量化输出（用于逐位比对） |
 
+> **偏置量化**：`export_mat.py` 默认 `--bias-mode corrected`，偏置按累积激活尺度
+> `c_in` 修正。不要用只按 1/scale 缩放的旧做法：7 类手势模型会全判背景
+> （int 11%）。修正后 float/位精确都是 89.04%、一致率 100%。只有复现旧结果
+> 才用 `--bias-mode legacy`。
+
 ### 文件名（必须严格一致）
 
 ```
@@ -110,7 +115,7 @@ L7 和 L10 只有 `node_conv2d_N`（无 ReLU）。
 #    python3 ml/model_template.py     # 自检，确认形状
 
 # 2) 导出量化 .mat（每个卷积层一个，含 input/output 参考对）
-python3 ml/export_mat.py --ckpt build/model.pt --out build/mats --classes K
+python3 ml/export_mat.py --ckpt build/model.pt --out build/mats --classes K --bias-mode corrected
 
 # 3) 打包成硬件文件（.vh + .mem + 仿真 hex）
 python3 ml/pack_model.py \
@@ -130,12 +135,19 @@ python3 ml/pack_model.py \
 
 ### 已实测的链路
 
-用随机初始化的 4 类模型跑通了：
+**真实 7 类手势模型**（370 帧，类别 background/fist/open_palm/point/victory/
+thumbs_up/ok）：
 
 ```
-Random MundusDet(4)  ->  export_mat  ->  11 个 .mat（形状与硬件一致）
-                     ->  pack_model  ->  11 个 .vh + mem_data + 仿真 hex
+train -> export_mat --bias-mode corrected -> 11 个 .mat
+      -> hw_emulate（位精确）: float 89.04% / int 89.04% / 一致率 100%
+      -> pack_model: 11 个 .vh + mem_data + 仿真 hex
 ```
+
+另外用随机初始化的 4 类模型验证过形状/打包链路：11 个 .mat → 11 个 .vh +
+mem_data + 仿真 hex，类别通道会补齐到 16。
+
+> 当前 89.04% 是同一段录制的分层验证，偏乐观；上板前要用新 session 复核。
 
 ---
 

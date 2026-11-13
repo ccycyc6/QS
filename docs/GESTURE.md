@@ -57,6 +57,24 @@ bash pcvision/gesture/gesture.sh app
 
 ---
 
+## 0.5 当前状态（2026-11-12 快照）
+
+| 项 | 当前值 |
+|---|---|
+| 类别 | 7 类：background / fist / open_palm / point / victory / thumbs_up / ok |
+| 数据 | 370 帧；1 个完整轮次 + 部分轮次 |
+| 模型 | float 89.04% / 位精确 89.04% / float-int 一致率 100% |
+| 阈值 | none（无干净分界，监测不启用阈值） |
+| 动作层 | HOLD / SWIPE_L/R/U/D / SEQUENCE；工作台可调参数 |
+| 镜像 | 工作台“自拍镜像”开关；默认不勾=原始非镜像，勾选=左右翻转 |
+| 板子 | 未动；RV/HDMI/PDS 暂停 |
+
+注意：89.04% 是**同一段录制的分层验证**，实时泛化会下降。下一步是补
+2–3 个完整轮次 + 3–4 次背景采集，再看新 session 的准确率和实时误报；
+动作层先做语义映射/调参，不急着上板。
+
+---
+
 ## 1. 两条边界，先看清楚
 
 | 能力 | 跑在哪 | 说明 |
@@ -336,6 +354,9 @@ $QS_GESTURE_HOME/env/bin/python pcvision/gesture/test_actions.py
 ---
 
 ## 7. 上板（Windows，训练满意之后再做）
+
+> **当前 PC 本地阶段不执行本节。** 这里只是效果满意后的迁移方案；
+> 板子/RV/HDMI/PDS 仍暂停。
 
 ### 7.1 在 PC 上打包
 
