@@ -82,7 +82,7 @@
     ├── fpga/                 rtl_pds（11 层 CNN）/ python_script / ares 核
     ├── pc/host/              线 A：手机 IMU + MediaPipe 控制器（独立，不涉及）
     ├── docs/                 GESTURE.md（主指南）/ MODEL.md / PROGRESS.md
-    ├── bitstreams/           当前位流
+    ├── bitstreams/           本地 PnR 位流（不入库，按需创建）
     └── tools/                构建与烧写脚本
 
 ## 关键事实
@@ -95,7 +95,7 @@
 | 推理延迟 | 1.14 ms @148.5 MHz |
 | 工具链 | PDS 2025.2-SP3 |
 | 历史资源 | LUT 54.35%、DRM 58%、APM 38%（含 RV 的旧位流；当前分支未带 RV RTL） |
-| 位流 | bitstreams/cam_yolo.sbit（历史视觉基线，含车牌；手势位流未生成） |
+| 位流 | 不入库；历史车牌位流已移出仓库，手势位流待生成 |
 | 当前阶段 | **PC 本地**：手势训练 + 动作层；板子/RV 未动 |
 
 ---

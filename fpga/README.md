@@ -1,5 +1,8 @@
 # 脉动卷积阵列 CNN HDMI FPGA 工程说明
 
+> **历史说明**：本 README 描述上游车牌 demo；手势线只复用 11 层 CNN，
+> LPRNet/车牌资产仅作历史参考。手势流程见 [docs/GESTURE.md](../docs/GESTURE.md)。
+
 > 本项目获得第十届全国大学生集成电路创新创业大赛“紫光同创” FPGA 赛道全国一等奖。
 
 > B站详细讲解视频链接：【［电子榨菜✓］开源！FPGA上的YOLO+LPRNet 车牌号实时检测 - 集创赛紫光同创国一】 https://www.bilibili.com/video/BV1Uoe16hEPA/?share_source=copy_web&vd_source=dc7e9d63ec94ab717e51d3918af2e9b5

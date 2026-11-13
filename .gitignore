@@ -12,33 +12,38 @@ fpga/prj_pds/place_route/
 fpga/prj_pds/report_timing/
 fpga/prj_pds/report_power/
 fpga/prj_pds/generate_bitstream/
+fpga/prj_pds/build/
+fpga/prj_pds/build_rv.pds
+fpga/prj_pds/impl.tcl
+cam/fpga/pango/*.pds
+cam/fpga/pango/impl.tcl
+tools/smoke/*.pds
+tools/smoke/impl.tcl
+
+# local PnR outputs (not committed)
+bitstreams/*.sbit
 
 # ---- python ----
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # ---- editors / os ----
 .vscode/
 .idea/
 Thumbs.db
 desktop.ini
+.DS_Store
+*.swp
+*.bak
 
-# ARES image files generated for the RV build
-fpga/prj_pds/build/
-
-# PDS rewrites these on every run
-fpga/prj_pds/build_rv.pds
-fpga/prj_pds/impl.tcl
-# firmware build output
-fpga/rtl_rv/fw/out/
-# PDS generated in cam / smoke builds
-cam/fpga/pango/*.pds
-cam/fpga/pango/impl.tcl
-tools/smoke/*.pds
-tools/smoke/impl.tcl
-ml/__pycache__/
-# pcvision working data
+# ---- local env / data ----
 pcvision/.venv/
 pcvision/data/
-build/
-__pycache__/
+
+# future RV build
+fpga/rtl_rv/fw/out/
