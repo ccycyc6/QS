@@ -230,7 +230,7 @@ powershell -File tools/program.ps1 -Bitstream bitstreams/<xxx>.sbit
 
 ### 8.5 测试素材
 
-历史车牌测试图已移出仓库；手势线不需要。当前 PC 本地阶段用摄像头采集，
+历史车牌测试图不在仓库；手势线不需要。当前 PC 本地阶段用摄像头采集，
 上板时用真实摄像头画面即可。
 
 ---

@@ -93,7 +93,7 @@ bash pcvision/gesture/gesture.sh app
 ### 和旧车牌内容的关系
 
 这条链路**不读取**旧车牌的权重、图片、标注或 LPRNet 支路。旧车牌只存在于
-历史视觉 demo（`cam/`、`fpga/rtl_pds` 的 LPRNet）里；旧位流已移出仓库；手势训练只复用
+历史视觉 demo（`cam/`、`fpga/rtl_pds` 的 LPRNet）里；旧位流已删除；手势训练只复用
 **11 层 conv/ReLU 的单帧 80×45 骨架**。上板打包时 `pack_model.py` 直接用你的
 手势权重覆盖 11 层的 `.mem/.vh`，不会把车牌权重带进去。
 
@@ -475,7 +475,7 @@ bash pcvision/gesture/gesture.sh smoke
 |---|---|
 | `fpga/rtl_pds/top_yolo` 的 11 层 conv/ReLU | LPRNet 支路（layer20–31、char decode、crop） |
 | HDMI 收发、DDR 帧缓冲、`frame_argmax` | 车牌测试图、车牌标注、车牌文档段落 |
-| RV 调度器 / UART（动作层以后要用） | 旧车牌位流（已移出仓库，历史见 git） |
+| RV 调度器 / UART（动作层以后要用） | 旧车牌位流（已删除） |
 | `.vh/.mem` 覆盖机制 | 旧车牌权重 `.mem`（打包时本来就会被覆盖） |
 
 步骤建议：
